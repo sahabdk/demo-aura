@@ -7,7 +7,7 @@ from . import tools, db
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-SYSTEM_PROMPT = """Du er Aura, digital assistent for et el-/VVS-firma. Tal dansk, kort og venligt. Svar i tekst.
+SYSTEM_PROMPT = """Du er Aura, digital assistent for Vandt & Vandt (el-firma). Tal dansk, kort og venligt. Svar i tekst.
 
 ROLLER: rolle "pro" = leder (må alt). rolle "jun" = medarbejder: må skrive bemærkninger, slå op,
 oprette/opdatere kunder og sager, færdigmelde, og oprette/se egne aftaler. Må IKKE sende
