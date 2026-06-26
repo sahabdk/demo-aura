@@ -1,0 +1,220 @@
+"""Agentens værktøjer = Python-funktioner + OpenAI-skemaer.
+
+Hvert værktøj angiver hvilke roller der må bruge det. 'pro' = leder, 'jun' = medarbejder.
+Funktionerne kaldes med (args: dict, ctx: dict) hvor ctx har 'telegram_id', 'navn', 'rolle'.
+"""
+from datetime import datetime, timedelta
+from . import ordrestyring as os_api
+from . import db
+
+
+# ---------- værktøjs-implementeringer ----------
+
+def soeg_kunde(args, ctx):
+    rows = os_api.search_debtors(name=args.get("navn"), address=args.get("adresse"))
+    if not rows:
+        return {"resultat": "ingen kunder fundet"}
+    return {"kunder": [
+        {"customer_number": r.get("customer_number"), "navn": r.get("customer_name"),
+         "adresse": r.get("customer_address"), "by": r.get("customer_city")}
+        for r in rows[:10]
+    ]}
+
+
+def soeg_sager(args, ctx):
+    # ordrestyring kan ikke filtrere /cases på customer_number -> filtrér klient-side
+    nr = str(args["customer_number"])
+    sager = [c for c in os_api.get_cases() if str(c.get("customer_number")) == nr]
+    return {"sager": [
+        {"sagsnummer": c.get("case_number"),
+         "beskrivelse": (c.get("description") or "")[:80],
+         "oprettet": c.get("created_at")}
+        for c in sager
+    ]}
+
+
+def skriv_bemaerkning(args, ctx):
+    dato = datetime.now().strftime("%d-%m-%Y")
+    os_api.add_remark(args["sagsnummer"], args["bemaerkning"], dato)
+    return {"resultat": f"Bemærkning lagt på sag {args['sagsnummer']}"}
+
+
+def opret_kunde(args, ctx):
+    res = os_api.create_debtor(
+        navn=args["navn"], adresse=args["adresse"], postnr=args["postnr"], by=args["by"],
+        telefon=args.get("telefon", ""), email=args.get("email", ""),
+        mobil=args.get("mobil", ""), attention=args.get("attention", ""), cvr=args.get("cvr", ""),
+    )
+    return {"resultat": "kunde oprettet", "kundenummer": res.get("customer_number")}
+
+
+def opdater_kunde(args, ctx):
+    res = os_api.update_debtor(args["kundenummer"], **{
+        k: v for k, v in args.items() if k != "kundenummer"
+    })
+    return {"resultat": "kunde opdateret", "kundenummer": args["kundenummer"]}
+
+
+def opret_sag(args, ctx):
+    res = os_api.create_case(customer_number=args["customer_number"],
+                             beskrivelse=args.get("beskrivelse", ""))
+    return {"resultat": "sag oprettet", "sagsnummer": res.get("case_number")}
+
+
+def afslut_sag(args, ctx):
+    os_api.close_case(args["sagsnummer"], work_done=args.get("kommentar", ""))
+    return {"resultat": f"Sag {args['sagsnummer']} færdigmeldt"}
+
+
+def send_paamindelse_email(args, ctx):
+    # Eskalerende niveau styres af tælleren i databasen
+    nr = str(args["kundenummer"])
+    debtor = os_api.get_debtor(nr)
+    email = debtor.get("customer_email")
+    if not email:
+        return {"resultat": "kunden har ingen email - kan ikke sende"}
+    level = db.next_reminder_level(nr)
+    from .email import send_payment_reminder
+    send_payment_reminder(email, debtor.get("customer_name"), level)
+    return {"resultat": f"{level}. påmindelse sendt til {debtor.get('customer_name')}"}
+
+
+def husk_aftale(args, ctx):
+    db.add_appointment(ctx["telegram_id"], args.get("kunde"), args.get("opgave"), args["start"])
+    return {"resultat": f"Husket: {args.get('opgave')} ({args['start']})"}
+
+
+def se_aftaler(args, ctx):
+    fra = args["fra"] + "T00:00:00"
+    til = args["til"] + "T23:59:59"
+    rows = db.appointments_between(ctx["telegram_id"], fra, til)
+    return {"aftaler": [{"start": r["start"], "kunde": r["kunde"], "opgave": r["opgave"]} for r in rows]}
+
+
+# ---------- registry: skema + funktion + tilladte roller ----------
+
+TOOLS = [
+    {
+        "func": soeg_kunde, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "soeg_kunde",
+            "description": "Søg en kunde via navn eller adresse. Returnerer customer_number, navn, adresse, by.",
+            "parameters": {"type": "object", "properties": {
+                "navn": {"type": "string"}, "adresse": {"type": "string"}}},
+        }},
+    },
+    {
+        "func": soeg_sager, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "soeg_sager",
+            "description": "Find en kundes sager via customer_number. Returnerer sagsnummer, beskrivelse, dato.",
+            "parameters": {"type": "object", "properties": {
+                "customer_number": {"type": "string"}}, "required": ["customer_number"]},
+        }},
+    },
+    {
+        "func": skriv_bemaerkning, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "skriv_bemaerkning",
+            "description": "Skriv en bemærkning på en sag (historik bevares). sagsnummer = kun tallet. "
+                           "bemaerkning = kun selve noten, uden kundenavn/adresse.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}, "bemaerkning": {"type": "string"}},
+                "required": ["sagsnummer", "bemaerkning"]},
+        }},
+    },
+    {
+        "func": opret_kunde, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "opret_kunde",
+            "description": "Opret en NY kunde. Påkrævet: navn, adresse, postnr, by. Valgfrit (kun hvis "
+                           "brugeren nævner dem): telefon, email, mobil, attention, cvr. Returnerer kundenummer.",
+            "parameters": {"type": "object", "properties": {
+                "navn": {"type": "string"}, "adresse": {"type": "string"},
+                "postnr": {"type": "string"}, "by": {"type": "string"},
+                "telefon": {"type": "string"}, "email": {"type": "string"},
+                "mobil": {"type": "string"}, "attention": {"type": "string"}, "cvr": {"type": "string"}},
+                "required": ["navn", "adresse", "postnr", "by"]},
+        }},
+    },
+    {
+        "func": opdater_kunde, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "opdater_kunde",
+            "description": "Opdater en EKSISTERENDE kunde (fx tilføj cvr, ret telefon/email/mobil). "
+                           "kundenummer påkrævet; medtag kun felter der skal ændres.",
+            "parameters": {"type": "object", "properties": {
+                "kundenummer": {"type": "string"}, "cvr": {"type": "string"},
+                "telefon": {"type": "string"}, "email": {"type": "string"}, "mobil": {"type": "string"}},
+                "required": ["kundenummer"]},
+        }},
+    },
+    {
+        "func": opret_sag, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "opret_sag",
+            "description": "Opret en NY sag på en eksisterende kunde (customer_number + beskrivelse). "
+                           "Returnerer sagsnummer.",
+            "parameters": {"type": "object", "properties": {
+                "customer_number": {"type": "string"}, "beskrivelse": {"type": "string"}},
+                "required": ["customer_number"]},
+        }},
+    },
+    {
+        "func": afslut_sag, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "afslut_sag",
+            "description": "Færdigmeld en sag og læg en afsluttende kommentar i 'Færdiggjort arbejde'.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}, "kommentar": {"type": "string"}},
+                "required": ["sagsnummer"]},
+        }},
+    },
+    {
+        "func": send_paamindelse_email, "roles": {"pro"},   # KUN leder
+        "schema": {"type": "function", "function": {
+            "name": "send_paamindelse_email",
+            "description": "Send en eskalerende betalingspåmindelse til en kunde (systemet vælger 1./2./3. niveau). "
+                           "Brug kun efter bekræftelse.",
+            "parameters": {"type": "object", "properties": {
+                "kundenummer": {"type": "string"}}, "required": ["kundenummer"]},
+        }},
+    },
+    {
+        "func": husk_aftale, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "husk_aftale",
+            "description": "Gem en aftale. start = ISO ÅÅÅÅ-MM-DDTHH:mm:ss (brug T08:00:00 hvis intet klokkeslæt).",
+            "parameters": {"type": "object", "properties": {
+                "kunde": {"type": "string"}, "opgave": {"type": "string"}, "start": {"type": "string"}},
+                "required": ["opgave", "start"]},
+        }},
+    },
+    {
+        "func": se_aftaler, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "se_aftaler",
+            "description": "Hent aftaler i et datointerval (fra/til som ÅÅÅÅ-MM-DD).",
+            "parameters": {"type": "object", "properties": {
+                "fra": {"type": "string"}, "til": {"type": "string"}}, "required": ["fra", "til"]},
+        }},
+    },
+]
+
+BY_NAME = {t["schema"]["function"]["name"]: t for t in TOOLS}
+
+
+def schemas_for_role(rolle: str):
+    return [t["schema"] for t in TOOLS if rolle in t["roles"]]
+
+
+def call_tool(name: str, args: dict, ctx: dict):
+    tool = BY_NAME.get(name)
+    if not tool:
+        return {"fejl": f"ukendt værktøj {name}"}
+    if ctx["rolle"] not in tool["roles"]:
+        return {"fejl": "afvist: kun lederen kan bruge denne funktion"}
+    try:
+        return tool["func"](args, ctx)
+    except Exception as e:  # ægte fejl -> agenten fortæller ærligt at det fejlede
+        return {"fejl": str(e)}
