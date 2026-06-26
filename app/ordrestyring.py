@@ -3,6 +3,7 @@
 HTTP Basic auth: API-nøglen er brugernavn, password er ligegyldigt ("x").
 Alle quirks vi fandt i Make er bygget ind her (feltnavne, krav, sortering).
 """
+import time
 import requests
 from .config import ORDRESTYRING_KEY, ORDRESTYRING_BASE
 
@@ -44,6 +45,29 @@ def search_debtors(*, name: str = None, address: str = None, postalcode: str = N
 
 def get_debtor(customer_number):
     return _data(_req("GET", f"/debtors/{customer_number}"))
+
+
+# ---- Cache over ALLE kunder (til fuzzy-søgning, da API'et kun kan eksakt match) ----
+_CACHE = {"rows": [], "ts": 0.0}
+_CACHE_TTL = 900  # 15 min
+
+
+def all_debtors(force=False):
+    """Henter alle kunder (pagineret) og cacher dem i 15 min."""
+    now = time.time()
+    if not force and _CACHE["rows"] and (now - _CACHE["ts"]) < _CACHE_TTL:
+        return _CACHE["rows"]
+    rows, page = [], 1
+    while page <= 60:  # sikkerhedsgrænse (60*100 = 6000 kunder)
+        batch = _data(_req("GET", "/debtors", params={"page": page, "pagesize": 100})) or []
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    _CACHE["rows"], _CACHE["ts"] = rows, now
+    return rows
 
 
 def next_customer_number() -> int:

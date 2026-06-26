@@ -3,21 +3,51 @@
 Hvert værktøj angiver hvilke roller der må bruge det. 'pro' = leder, 'jun' = medarbejder.
 Funktionerne kaldes med (args: dict, ctx: dict) hvor ctx har 'telegram_id', 'navn', 'rolle'.
 """
+import difflib
 from datetime import datetime, timedelta
 from . import ordrestyring as os_api
 from . import db
 
 
+def _norm(s):
+    return (s or "").strip().lower()
+
+
+def fuzzy_find_customers(query, limit=8):
+    """Fleksibel kundesøgning over hele kundelisten (case-insensitiv, delvis, ~match).
+    Søger i både navn og adresse, så Aura kan foreslå selv ved upræcis stavning."""
+    q = _norm(query)
+    if not q:
+        return []
+    scored = []
+    for d in os_api.all_debtors():
+        name = _norm(d.get("customer_name"))
+        addr = _norm(d.get("customer_address"))
+        city = _norm(d.get("customer_city"))
+        if q in name or q in addr or q in city:
+            score = 1.0
+        else:
+            score = max(
+                difflib.SequenceMatcher(None, q, name).ratio(),
+                difflib.SequenceMatcher(None, q, f"{name} {addr}").ratio(),
+            )
+        scored.append((score, d))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [d for s, d in scored if s >= 0.5][:limit]
+
+
 # ---------- værktøjs-implementeringer ----------
 
 def soeg_kunde(args, ctx):
-    rows = os_api.search_debtors(name=args.get("navn"), address=args.get("adresse"))
+    query = args.get("soegetekst") or args.get("navn") or args.get("adresse") or ""
+    rows = fuzzy_find_customers(query)
     if not rows:
-        return {"resultat": "ingen kunder fundet"}
+        return {"resultat": "ingen kunder fundet", "forslag": []}
     return {"kunder": [
         {"customer_number": r.get("customer_number"), "navn": r.get("customer_name"),
-         "adresse": r.get("customer_address"), "by": r.get("customer_city")}
-        for r in rows[:10]
+         "adresse": r.get("customer_address"), "postnr": r.get("customer_postalcode"),
+         "by": r.get("customer_city")}
+        for r in rows
     ]}
 
 
@@ -98,9 +128,11 @@ TOOLS = [
         "func": soeg_kunde, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "soeg_kunde",
-            "description": "Søg en kunde via navn eller adresse. Returnerer customer_number, navn, adresse, by.",
+            "description": "Søg en kunde fleksibelt via navn ELLER adresse (delvis/upræcis er ok — den foreslår). "
+                           "Send ét felt 'soegetekst' med det brugeren sagde, fx 'christian' eller 'Ribevej 25'. "
+                           "Returnerer en liste af mulige kunder med customer_number, navn, adresse, postnr, by.",
             "parameters": {"type": "object", "properties": {
-                "navn": {"type": "string"}, "adresse": {"type": "string"}}},
+                "soegetekst": {"type": "string"}}, "required": ["soegetekst"]},
         }},
     },
     {
