@@ -118,9 +118,17 @@ def forfaldne_fakturaer(args, ctx):
             forfald = datetime.fromtimestamp(int(pd)).strftime("%d-%m-%Y") if pd else ""
         except (ValueError, TypeError, OSError):
             forfald = str(pd or "")
-        out.append({"kunde": r.get("cust_name"), "sag": r.get("case_number"),
-                    "beloeb": r.get("amount_vat"), "forfald": forfald})
+        knr = r.get("customer_number")
+        out.append({"kunde": r.get("cust_name"), "kundenummer": knr,
+                    "sag": r.get("case_number"), "beloeb": r.get("amount_vat"),
+                    "forfald": forfald, "antal_rykkere": db.get_reminder_count(knr)})
     return {"antal": len(out), "fakturaer": out}
+
+
+def saet_rykker_niveau(args, ctx):
+    """Lederen synkroniserer tælleren med manuelt afsendte rykkere."""
+    db.set_reminder_count(args["kundenummer"], int(args.get("antal", 0)))
+    return {"resultat": f"Kunde {args['kundenummer']} er nu registreret som rykket {args['antal']} gang(e)"}
 
 
 def husk_aftale(args, ctx):
@@ -230,8 +238,19 @@ TOOLS = [
         "func": forfaldne_fakturaer, "roles": {"pro"},   # KUN leder
         "schema": {"type": "function", "function": {
             "name": "forfaldne_fakturaer",
-            "description": "Henter forfaldne, ubetalte fakturaer (kun leder). Returnerer liste med kunde, sag, beløb og forfaldsdato.",
+            "description": "Henter forfaldne, ubetalte fakturaer (kun leder). Returnerer liste med kunde, kundenummer, sag, beløb, forfaldsdato og antal_rykkere (hvor mange gange kunden er rykket).",
             "parameters": {"type": "object", "properties": {}},
+        }},
+    },
+    {
+        "func": saet_rykker_niveau, "roles": {"pro"},   # KUN leder
+        "schema": {"type": "function", "function": {
+            "name": "saet_rykker_niveau",
+            "description": "Synkronisér rykker-tælleren for en kunde med manuelt afsendte rykkere. "
+                           "Brug fx når lederen siger 'Christian er allerede rykket 2 gange manuelt'.",
+            "parameters": {"type": "object", "properties": {
+                "kundenummer": {"type": "string"}, "antal": {"type": "integer"}},
+                "required": ["kundenummer", "antal"]},
         }},
     },
     {

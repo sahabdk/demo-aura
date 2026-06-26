@@ -103,6 +103,22 @@ def next_reminder_level(kundenummer: str) -> int:
         return level
 
 
+def get_reminder_count(kundenummer: str) -> int:
+    with conn() as c:
+        row = c.execute("SELECT antal FROM rykkere WHERE kundenummer=?", (str(kundenummer),)).fetchone()
+        return row["antal"] if row else 0
+
+
+def set_reminder_count(kundenummer: str, antal: int):
+    """Lederen kan synkronisere tælleren med manuelle rykkere."""
+    with conn() as c:
+        c.execute(
+            "INSERT INTO rykkere(kundenummer, antal) VALUES(?,?) "
+            "ON CONFLICT(kundenummer) DO UPDATE SET antal=excluded.antal",
+            (str(kundenummer), int(antal)),
+        )
+
+
 # ---- Aftaler (personlig hukommelse) ----
 
 def add_appointment(telegram_id, kunde, opgave, start_iso):
