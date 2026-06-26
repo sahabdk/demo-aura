@@ -109,6 +109,20 @@ def send_paamindelse_email(args, ctx):
     return {"resultat": f"{level}. påmindelse sendt til {debtor.get('customer_name')}"}
 
 
+def forfaldne_fakturaer(args, ctx):
+    rows = os_api.overdue_unpaid_invoices()
+    out = []
+    for r in rows:
+        pd = r.get("payment_date")
+        try:
+            forfald = datetime.fromtimestamp(int(pd)).strftime("%d-%m-%Y") if pd else ""
+        except (ValueError, TypeError, OSError):
+            forfald = str(pd or "")
+        out.append({"kunde": r.get("cust_name"), "sag": r.get("case_number"),
+                    "beloeb": r.get("amount_vat"), "forfald": forfald})
+    return {"antal": len(out), "fakturaer": out}
+
+
 def husk_aftale(args, ctx):
     db.add_appointment(ctx["telegram_id"], args.get("kunde"), args.get("opgave"), args["start"])
     return {"resultat": f"Husket: {args.get('opgave')} ({args['start']})"}
@@ -213,6 +227,14 @@ TOOLS = [
         }},
     },
     {
+        "func": forfaldne_fakturaer, "roles": {"pro"},   # KUN leder
+        "schema": {"type": "function", "function": {
+            "name": "forfaldne_fakturaer",
+            "description": "Henter forfaldne, ubetalte fakturaer (kun leder). Returnerer liste med kunde, sag, beløb og forfaldsdato.",
+            "parameters": {"type": "object", "properties": {}},
+        }},
+    },
+    {
         "func": husk_aftale, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "husk_aftale",
@@ -250,3 +272,4 @@ def call_tool(name: str, args: dict, ctx: dict):
         return tool["func"](args, ctx)
     except Exception as e:  # ægte fejl -> agenten fortæller ærligt at det fejlede
         return {"fejl": str(e)}
+# slut

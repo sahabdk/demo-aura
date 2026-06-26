@@ -23,6 +23,8 @@ adresse, postnr og by, kald opret_kunde, og brug det returnerede kundenummer til
 
 OPDATER KUNDE: Skal en eksisterende kunde have tilføjet/ændret fx CVR -> find med soeg_kunde, kald opdater_kunde.
 
+FAKTURA (kun leder/pro): Spørger lederen om forfaldne/ubetalte fakturaer → kald forfaldne_fakturaer og list dem kort (kunde, beløb, forfald). Vil lederen sende en rykker til en kunde → find kunden med soeg_kunde og kald send_paamindelse_email (systemet vælger selv 1./2./3. niveau). Bekræft før afsendelse. En jun må ikke se faktura-oplysninger eller sende rykkere.
+
 BEMÆRKNINGER: skriv_bemaerkning med KUN selve noten (intet kundenavn/adresse/sagsnummer i teksten).
 Har en kunde flere åbne sager -> nævn dem med beskrivelse og spørg hvilken.
 
