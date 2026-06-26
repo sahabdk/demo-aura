@@ -16,6 +16,7 @@ app = FastAPI(title="Aura")
 @app.on_event("startup")
 def _startup():
     db.init_db()
+    db.seed_users_from_env()   # opretter brugere fra SEED_USERS-miljøvariablen
     start_scheduler()
     log.info("Aura startet")
 

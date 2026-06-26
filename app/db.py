@@ -71,6 +71,24 @@ def all_users():
         return [dict(r) for r in c.execute("SELECT * FROM brugere WHERE aktiv=1").fetchall()]
 
 
+def seed_users_from_env():
+    """Opretter brugere fra miljøvariablen SEED_USERS.
+    Format: 'telegram_id:navn:rolle,telegram_id:navn:rolle' (rolle = pro|jun).
+    Fx: 7713099063:Dan:pro,6779276258:Sahab:jun
+    """
+    import os
+    raw = os.environ.get("SEED_USERS", "")
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        bits = [b.strip() for b in part.split(":")]
+        if len(bits) >= 2:
+            tid, navn = bits[0], bits[1]
+            rolle = bits[2] if len(bits) > 2 else "jun"
+            upsert_user(tid, navn, rolle)
+
+
 # ---- Rykker-tæller (eskalering 1->2->3) ----
 
 def next_reminder_level(kundenummer: str) -> int:
