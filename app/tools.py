@@ -85,14 +85,26 @@ def opdater_kunde(args, ctx):
     return {"resultat": "kunde opdateret", "kundenummer": args["kundenummer"]}
 
 
+def _note_kontakt_levering(sagsnummer, args):
+    """Kontaktperson/leveringsadresse er ID-felter -> skriv dem som bemærkning."""
+    dele = []
+    if args.get("kontaktperson"):
+        dele.append(f"Kontaktperson: {args['kontaktperson']}")
+    if args.get("leveringsadresse"):
+        dele.append(f"Leveringsadresse: {args['leveringsadresse']}")
+    if dele and sagsnummer:
+        os_api.add_remark(sagsnummer, " · ".join(dele), datetime.now().strftime("%d-%m-%Y"))
+
+
 def opret_sag(args, ctx):
     res = os_api.create_case(
         customer_number=args["customer_number"],
         beskrivelse=args.get("beskrivelse", ""),
-        kontaktperson=args.get("kontaktperson", ""),
         reference=args.get("reference", ""),
     )
-    return {"resultat": "sag oprettet", "sagsnummer": res.get("case_number")}
+    sag = res.get("case_number")
+    _note_kontakt_levering(sag, args)
+    return {"resultat": "sag oprettet", "sagsnummer": sag}
 
 
 def opdater_sag(args, ctx):
@@ -100,9 +112,9 @@ def opdater_sag(args, ctx):
     os_api.update_case(
         args["sagsnummer"],
         beskrivelse=args.get("beskrivelse"),
-        kontaktperson=args.get("kontaktperson"),
         reference=args.get("reference"),
     )
+    _note_kontakt_levering(args["sagsnummer"], args)
     return {"resultat": f"Sag {args['sagsnummer']} opdateret"}
 
 
@@ -223,10 +235,11 @@ TOOLS = [
         "schema": {"type": "function", "function": {
             "name": "opret_sag",
             "description": "Opret en NY sag på en eksisterende kunde. Brug KUN når brugeren tydeligt vil have en ny sag. "
-                           "Valgfrit: kontaktperson, reference. Returnerer sagsnummer.",
+                           "Valgfrit: reference, kontaktperson, leveringsadresse. Returnerer sagsnummer.",
             "parameters": {"type": "object", "properties": {
                 "customer_number": {"type": "string"}, "beskrivelse": {"type": "string"},
-                "kontaktperson": {"type": "string"}, "reference": {"type": "string"}},
+                "reference": {"type": "string"}, "kontaktperson": {"type": "string"},
+                "leveringsadresse": {"type": "string"}},
                 "required": ["customer_number"]},
         }},
     },
@@ -235,10 +248,11 @@ TOOLS = [
         "schema": {"type": "function", "function": {
             "name": "opdater_sag",
             "description": "Tilføj/ret felter på en EKSISTERENDE sag (opretter ALDRIG en ny). Brug når brugeren vil "
-                           "tilføje noget til en sag der allerede findes, fx ret beskrivelse, sæt kontaktperson eller reference.",
+                           "tilføje noget til en sag der findes, fx ret beskrivelse, sæt reference, kontaktperson eller leveringsadresse.",
             "parameters": {"type": "object", "properties": {
                 "sagsnummer": {"type": "string"}, "beskrivelse": {"type": "string"},
-                "kontaktperson": {"type": "string"}, "reference": {"type": "string"}},
+                "reference": {"type": "string"}, "kontaktperson": {"type": "string"},
+                "leveringsadresse": {"type": "string"}},
                 "required": ["sagsnummer"]},
         }},
     },

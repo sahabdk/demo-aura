@@ -144,16 +144,13 @@ def get_case(case_number):
 
 CASE_FIELD_MAP = {
     "beskrivelse": "description",
-    "kontaktperson": "contact",
     "reference": "yourref",
-    # "projektnavn": "<udfyldes når feltet er identificeret>",
+    # kontaktperson/leveringsadresse er ID-baserede felter -> skrives som bemærkning i stedet
 }
 
 
-def create_case(*, customer_number, beskrivelse="", kontaktperson="", reference=""):
+def create_case(*, customer_number, beskrivelse="", reference=""):
     body = {"customer_number": customer_number, "description": beskrivelse}
-    if kontaktperson:
-        body["contact"] = kontaktperson
     if reference:
         body["yourref"] = reference
     return _data(_req("POST", "/cases", json=body))
