@@ -3,6 +3,7 @@
 HTTP Basic auth: API-nøglen er brugernavn, password er ligegyldigt ("x").
 Alle quirks vi fandt i Make er bygget ind her (feltnavne, krav, sortering).
 """
+import os
 import time
 import requests
 from .config import ORDRESTYRING_KEY, ORDRESTYRING_BASE
@@ -184,11 +185,46 @@ def add_remark(case_number, tekst, dato_str):
     return _data(_req("PUT", f"/cases/{case_number}", json={"remarks": ny}))
 
 
+_STATUSES = {"rows": [], "ts": 0.0}
+# Tekster der betyder "sagen er afsluttet" (firmaets statusnavne kan variere)
+_LUKKE_ORD = ("afslut", "lukket", "luk", "færdig", "udført", "completed", "closed", "done")
+
+
+def case_statuses(force=False):
+    """Firmaets sags-statusser (id + tekst), cachet 30 min."""
+    now = time.time()
+    if not force and _STATUSES["rows"] and (now - _STATUSES["ts"]) < 1800:
+        return _STATUSES["rows"]
+    _STATUSES["rows"] = _data(_req("GET", "/case-statuses")) or []
+    _STATUSES["ts"] = now
+    return _STATUSES["rows"]
+
+
+def closed_status_id():
+    """Finder id'et for 'afsluttet'-status. Env CLOSE_STATUS_ID vinder (sættes ved levering
+    for 100% sikkerhed); ellers gættes ud fra statusteksten."""
+    env = os.environ.get("CLOSE_STATUS_ID")
+    if env:
+        try:
+            return int(env)
+        except ValueError:
+            pass
+    for s in case_statuses():
+        tekst = (s.get("text") or "").lower()
+        if any(o in tekst for o in _LUKKE_ORD):
+            return s.get("id")
+    return None
+
+
 def close_case(case_number, work_done=""):
-    """Færdigmelder en sag (status + 'Færdiggjort arbejde'). Status-ID afhænger af firmaet."""
-    body = {"work_done": work_done}
-    # TODO: sæt 'status' til firmaets 'afsluttet'-status-id (hentes fra /case-statuses)
-    return _data(_req("PUT", f"/cases/{case_number}", json=body))
+    """Færdigmelder en sag: sætter 'Færdiggjort arbejde' OG status til 'afsluttet' (hvis fundet).
+    Returnerer hvilken status der blev sat (eller None hvis ingen kunne findes)."""
+    sid = closed_status_id()
+    body = {"work_done": work_done or ""}
+    if sid is not None:
+        body["status"] = sid
+    _req("PUT", f"/cases/{case_number}", json=body)
+    return {"status_id": sid}
 
 
 # ---------- Invoices (fakturaer) ----------

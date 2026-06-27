@@ -147,8 +147,11 @@ def opdater_sag(args, ctx):
 
 
 def afslut_sag(args, ctx):
-    os_api.close_case(args["sagsnummer"], work_done=args.get("kommentar", ""))
-    return {"resultat": f"Sag {args['sagsnummer']} færdigmeldt"}
+    info = os_api.close_case(args["sagsnummer"], work_done=args.get("kommentar", ""))
+    if info.get("status_id"):
+        return {"resultat": f"Sag {args['sagsnummer']} er færdigmeldt og lukket (status sat til afsluttet)."}
+    return {"resultat": (f"Sag {args['sagsnummer']} er færdigmeldt (arbejde noteret), men jeg kunne ikke "
+                         "finde en 'afsluttet'-status at sætte, så status er uændret.")}
 
 
 def send_paamindelse_email(args, ctx):
