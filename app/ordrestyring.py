@@ -319,6 +319,21 @@ def _debtor_med_kontakter(customer_number):
     return d, (contacts if isinstance(contacts, list) else [])
 
 
+_KONTAKT_FELTER = ("name", "email", "telephone", "mobile", "address", "postalcode", "city", "att", "ean")
+
+
+def _rens_kontakt(c):
+    """Behold kun de skrivbare tekstfelter og lav null -> "" (serverens preg_replace
+    kan ikke håndtere null eller server-styrede felter som created_at/eco_*)."""
+    ud = {}
+    if c.get("id"):
+        ud["id"] = c["id"]
+    for k in _KONTAKT_FELTER:
+        v = c.get(k)
+        ud[k] = "" if v is None else v
+    return ud
+
+
 def _gem_kunde_kontakter(customer_number, d, contacts):
     """Gemmer kundens kontaktliste ved at sende den med i en opdatering af hele kunden
     (kontakt-underressourcen tillader ikke PUT/POST direkte). Påkrævede felter bevares."""
@@ -331,7 +346,7 @@ def _gem_kunde_kontakter(customer_number, d, contacts):
         "invoice_address": d.get("invoice_address"),
         "invoice_postalcode": d.get("invoice_postalcode"),
         "invoice_city": d.get("invoice_city"),
-        "contacts": contacts,
+        "contacts": [_rens_kontakt(c) for c in contacts],
     }
     return _data(_req("PUT", f"/debtors/{customer_number}", json=body))
 
