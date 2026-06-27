@@ -91,16 +91,23 @@ def _set_kontakt_levering(sagsnummer, customer_number, args):
     out = {}
     if not sagsnummer:
         return out
+    # Begge dele er IKKE-fatale: en fejl her må aldrig vælte selve sag-oprettelsen.
     if args.get("kontaktperson"):
-        os_api.update_case(sagsnummer, kontaktperson=args["kontaktperson"])
-        out["kontaktperson"] = args["kontaktperson"]
+        try:
+            os_api.update_case(sagsnummer, kontaktperson=args["kontaktperson"])
+            out["kontaktperson"] = args["kontaktperson"]
+        except Exception as e:
+            out["kontaktperson_fejl"] = str(e)
     if args.get("leveringsadresse"):
-        kn = customer_number or (os_api.get_case(sagsnummer) or {}).get("customer_number")
-        if kn:
-            info = os_api.link_leveringsadresse(sagsnummer, kn, args["leveringsadresse"])
-            out["leveringsadresse"] = ("oprettet og sat" if info.get("oprettet") else "sat") + f": {info.get('adresse')}"
-        else:
-            out["leveringsadresse_fejl"] = "kunne ikke finde kundenummer på sagen"
+        try:
+            kn = customer_number or (os_api.get_case(sagsnummer) or {}).get("customer_number")
+            if not kn:
+                out["leveringsadresse_fejl"] = "kunne ikke finde kundenummer på sagen"
+            else:
+                info = os_api.link_leveringsadresse(sagsnummer, kn, args["leveringsadresse"])
+                out["leveringsadresse"] = ("oprettet og sat" if info.get("oprettet") else "sat") + f": {info.get('adresse')}"
+        except Exception as e:
+            out["leveringsadresse_fejl"] = str(e)
     return out
 
 
