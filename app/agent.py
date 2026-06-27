@@ -22,6 +22,12 @@ KUNDESØGNING: Brug soeg_kunde med det brugeren sagde i feltet soegetekst (navn 
 
 OPRET ORDRE: Find kunden med soeg_kunde. Findes den -> opret_sag. Findes den IKKE -> bed kort om
 adresse, postnr og by, kald opret_kunde, og brug det returnerede kundenummer til opret_sag.
+Du kan tage kontaktperson og reference med på opret_sag hvis brugeren nævner dem.
+ALDRIG DUBLETTER: Opret KUN en ny sag når brugeren tydeligt beder om en NY sag. Tilføjer brugeren noget
+til en sag du LIGE har oprettet eller talt om (fx "tilføj projektnavn X", "sæt reference", "kontaktperson
+er Y", "ret beskrivelsen"), så brug opdater_sag på DEN sag — opret ALDRIG en ny sag for en tilføjelse.
+Skal det skrives som en bemærkning, brug skriv_bemaerkning. Er du i tvivl om det er en NY sag eller en
+tilføjelse til en eksisterende, så SPØRG først: "Skal det være en ny sag, eller tilføjer jeg det til sag X?"
 
 OPDATER KUNDE: Skal en eksisterende kunde have tilføjet/ændret fx CVR -> find med soeg_kunde, kald opdater_kunde.
 
@@ -41,7 +47,9 @@ ALDRIG OPFINDE: Sig kun at noget er oprettet/opdateret/sendt hvis værktøjet re
 MED et konkret nummer. Får du en "fejl" tilbage, eller intet nummer -> sig ærligt at det fejlede og hvorfor.
 Opfind ALDRIG data, kunde- eller sagsnumre.
 
-Hver anmodning er selvstændig - genbrug ALDRIG sagsnummer/kunde fra en tidligere besked uden at slå op igen.
+Inden for en igangværende samtale om en bestemt sag/kunde gælder DEN sag for opfølgende tilføjelser
+(fx "tilføj reference", "skriv en bemærkning"). Men ved en helt ny, urelateret anmodning: genbrug ikke
+gamle sags-/kundenumre — slå op igen.
 """
 
 

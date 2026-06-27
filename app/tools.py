@@ -86,9 +86,24 @@ def opdater_kunde(args, ctx):
 
 
 def opret_sag(args, ctx):
-    res = os_api.create_case(customer_number=args["customer_number"],
-                             beskrivelse=args.get("beskrivelse", ""))
+    res = os_api.create_case(
+        customer_number=args["customer_number"],
+        beskrivelse=args.get("beskrivelse", ""),
+        kontaktperson=args.get("kontaktperson", ""),
+        reference=args.get("reference", ""),
+    )
     return {"resultat": "sag oprettet", "sagsnummer": res.get("case_number")}
+
+
+def opdater_sag(args, ctx):
+    """Tilføj/ret felter på en EKSISTERENDE sag (ingen ny sag oprettes)."""
+    os_api.update_case(
+        args["sagsnummer"],
+        beskrivelse=args.get("beskrivelse"),
+        kontaktperson=args.get("kontaktperson"),
+        reference=args.get("reference"),
+    )
+    return {"resultat": f"Sag {args['sagsnummer']} opdateret"}
 
 
 def afslut_sag(args, ctx):
@@ -207,11 +222,24 @@ TOOLS = [
         "func": opret_sag, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "opret_sag",
-            "description": "Opret en NY sag på en eksisterende kunde (customer_number + beskrivelse). "
-                           "Returnerer sagsnummer.",
+            "description": "Opret en NY sag på en eksisterende kunde. Brug KUN når brugeren tydeligt vil have en ny sag. "
+                           "Valgfrit: kontaktperson, reference. Returnerer sagsnummer.",
             "parameters": {"type": "object", "properties": {
-                "customer_number": {"type": "string"}, "beskrivelse": {"type": "string"}},
+                "customer_number": {"type": "string"}, "beskrivelse": {"type": "string"},
+                "kontaktperson": {"type": "string"}, "reference": {"type": "string"}},
                 "required": ["customer_number"]},
+        }},
+    },
+    {
+        "func": opdater_sag, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "opdater_sag",
+            "description": "Tilføj/ret felter på en EKSISTERENDE sag (opretter ALDRIG en ny). Brug når brugeren vil "
+                           "tilføje noget til en sag der allerede findes, fx ret beskrivelse, sæt kontaktperson eller reference.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}, "beskrivelse": {"type": "string"},
+                "kontaktperson": {"type": "string"}, "reference": {"type": "string"}},
+                "required": ["sagsnummer"]},
         }},
     },
     {

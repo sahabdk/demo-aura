@@ -142,9 +142,32 @@ def get_case(case_number):
     return _data(_req("GET", f"/cases/{case_number}"))
 
 
-def create_case(*, customer_number, beskrivelse=""):
+CASE_FIELD_MAP = {
+    "beskrivelse": "description",
+    "kontaktperson": "contact",
+    "reference": "yourref",
+    # "projektnavn": "<udfyldes når feltet er identificeret>",
+}
+
+
+def create_case(*, customer_number, beskrivelse="", kontaktperson="", reference=""):
     body = {"customer_number": customer_number, "description": beskrivelse}
+    if kontaktperson:
+        body["contact"] = kontaktperson
+    if reference:
+        body["yourref"] = reference
     return _data(_req("POST", "/cases", json=body))
+
+
+def update_case(case_number, **fields):
+    """Opdater felter på en eksisterende sag. Tom værdi springes over."""
+    body = {}
+    for k, v in fields.items():
+        if v not in (None, ""):
+            body[CASE_FIELD_MAP.get(k, k)] = v
+    if not body:
+        return {}
+    return _data(_req("PUT", f"/cases/{case_number}", json=body))
 
 
 def add_remark(case_number, tekst, dato_str):
