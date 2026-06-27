@@ -71,13 +71,16 @@ def vis_nye_ordrer(chat_id, telegram_id, offset=0, since=None, pin=True):
     if not cases:
         telegram.send_message(chat_id, "Ingen nye ordrer siden sidst i dag. 👍")
         return
-    faerdig = _send_batch(
+    _send_batch(
         chat_id, cases, offset, "🆕 Nye ordrer i dag",
         f"nyeside:{offset + PER_SIDE}:{since}",
         "↓ Det var alle nye ordrer.", [[("📋 Se alle dagens ordrer", "dagens")]],
         pin=pin,
     )
-    if faerdig:
+    # Markér som set MED DET SAMME (allerede ved første side), så et nyt
+    # "nye ordrer" ikke gentager dem. Resten ligger bag "Vis næste 10"-knappen,
+    # som bærer det oprindelige 'since' og derfor stadig kan hente dem frem.
+    if offset == 0:
         newest = max((int(c.get("created_at") or 0) for c in cases), default=since)
         db.set_last_seen_order(telegram_id, newest + 1)
 
