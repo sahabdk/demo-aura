@@ -51,11 +51,21 @@ def faktura_overview():
     telegram.send_message(LEADER_GROUP_CHAT_ID, "🧾 Forfaldne ubetalte fakturaer:\n" + "\n".join(linjer))
 
 
+def reference_scan():
+    """Scan de store kunders sager for manglende referencenumre og mail dem."""
+    try:
+        from . import reference
+        reference.scan_and_notify()
+    except Exception:
+        log.exception("reference-scan fejlede")
+
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone=TZ)
     sch.add_job(morning_digest, "cron", hour=7, minute=0)
     sch.add_job(soon_reminders, "cron", day_of_week="mon-fri", hour="6-18", minute="*/15")
     sch.add_job(faktura_overview, "cron", day_of_week="mon", hour=8, minute=0)
+    sch.add_job(reference_scan, "cron", day_of_week="mon-fri", hour="7-18", minute=0)  # hver hele time i arbejdstiden
     sch.start()
     log.info("scheduler kører")
     return sch

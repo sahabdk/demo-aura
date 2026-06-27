@@ -206,6 +206,10 @@ def try_command(chat_id, telegram_id, text):
     if "dagens ordre" in t:
         vis_dagens_ordrer(chat_id, telegram_id)
         return True
+    if "referenc" in t and ("scan" in t or "tjek" in t):
+        from . import reference
+        telegram.send_message(chat_id, reference.scan_and_links())
+        return True
     m = re.search(r"sag\s+(\d+)", t)
     if m and ("vis" in t or "detalj" in t):
         nr = m.group(1)

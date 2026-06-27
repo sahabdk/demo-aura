@@ -47,6 +47,17 @@ def init_db():
                 k TEXT PRIMARY KEY,
                 v TEXT
             );
+            CREATE TABLE IF NOT EXISTS ref_anmodninger (
+                token            TEXT PRIMARY KEY,
+                case_number      TEXT NOT NULL,
+                customer_number  TEXT NOT NULL,
+                status           TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'done'
+                reference        TEXT,
+                antal_mails      INTEGER NOT NULL DEFAULT 0,
+                created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                sidste_mail_at   DATETIME,
+                filled_at        DATETIME
+            );
             """
         )
 
@@ -182,3 +193,52 @@ def get_last_seen_order(telegram_id):
 
 def set_last_seen_order(telegram_id, ts):
     set_meta(f"sidst_ordre:{telegram_id}", int(ts))
+
+
+# ---- Referenceanmodninger (kundeportal) ----
+
+def create_ref_request(token, case_number, customer_number):
+    with conn() as c:
+        c.execute(
+            "INSERT OR IGNORE INTO ref_anmodninger(token, case_number, customer_number) "
+            "VALUES(?,?,?)", (token, str(case_number), str(customer_number)),
+        )
+
+
+def get_ref_request(token):
+    with conn() as c:
+        row = c.execute("SELECT * FROM ref_anmodninger WHERE token=?", (token,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_ref_request_by_case(case_number):
+    with conn() as c:
+        row = c.execute("SELECT * FROM ref_anmodninger WHERE case_number=?",
+                        (str(case_number),)).fetchone()
+        return dict(row) if row else None
+
+
+def pending_ref_requests():
+    with conn() as c:
+        return [dict(r) for r in c.execute(
+            "SELECT * FROM ref_anmodninger WHERE status='pending'").fetchall()]
+
+
+def mark_ref_mailed(token):
+    with conn() as c:
+        c.execute("UPDATE ref_anmodninger SET antal_mails = antal_mails + 1, "
+                  "sidste_mail_at = CURRENT_TIMESTAMP WHERE token=?", (token,))
+
+
+def mark_ref_done(token, reference):
+    with conn() as c:
+        c.execute("UPDATE ref_anmodninger SET status='done', reference=?, "
+                  "filled_at=CURRENT_TIMESTAMP WHERE token=?", (reference, token))
+
+
+def mark_ref_done_by_case(case_number, reference=None):
+    """Markér som udfyldt hvis referencen er kommet ind ad anden vej (fx direkte i ordrestyring)."""
+    with conn() as c:
+        c.execute("UPDATE ref_anmodninger SET status='done', reference=COALESCE(?, reference), "
+                  "filled_at=CURRENT_TIMESTAMP WHERE case_number=? AND status='pending'",
+                  (reference, str(case_number)))

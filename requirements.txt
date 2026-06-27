@@ -4,3 +4,4 @@ requests>=2.31
 openai>=1.30
 python-dotenv>=1.0
 apscheduler>=3.10
+python-multipart>=0.0.9

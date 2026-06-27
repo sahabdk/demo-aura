@@ -35,12 +35,15 @@ def send_payment_reminder(to_email: str, navn: str, level: int,
             detaljer += f" (forfald {forfald})"
         detaljer += "."
     text = f"Kære {navn},\n\n{body}{detaljer}\n\nVenlig hilsen\n{FIRMA}"
+    return _send(to_email, subject, text)
 
+
+def _send(to_email: str, subject: str, text: str) -> str:
+    """Sender en mail via SMTP. Returnerer 'sent' eller 'dry-run' hvis SMTP ikke er sat op."""
     host = os.environ.get("SMTP_HOST")
     if not host:
         print(f"[EMAIL/dry-run] -> {to_email} | {subject}\n{text}")
         return "dry-run"
-
     msg = MIMEText(text)
     msg["Subject"] = subject
     msg["From"] = os.environ.get("SMTP_FROM", os.environ.get("SMTP_USER", ""))
@@ -50,3 +53,21 @@ def send_payment_reminder(to_email: str, navn: str, level: int,
         s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
         s.send_message(msg)
     return "sent"
+
+
+def send_reference_request(to_email: str, navn: str, sag_tekst: str, link: str,
+                           reminder: bool = False) -> str:
+    """Beder kunden om at indtaste referencenummer via portal-link. Returnerer 'sent'/'dry-run'."""
+    if reminder:
+        subject = "Påmindelse: vi mangler dit referencenummer"
+        indledning = ("Vi mangler stadig et referencenummer til en opgave, vi har udført for jer. "
+                      "Vi beder dig venligt indtaste det, så vi kan fakturere korrekt.")
+    else:
+        subject = "Vi mangler et referencenummer"
+        indledning = ("Vi har registreret en opgave for jer, men mangler et referencenummer for at "
+                      "kunne fakturere korrekt. Du kan nemt indtaste det via linket nedenfor.")
+    text = (f"Kære {navn},\n\n{indledning}\n\n"
+            f"Opgave: {sag_tekst}\n\n"
+            f"Indtast referencenummer her:\n{link}\n\n"
+            f"På forhånd tak.\n\nVenlig hilsen\n{FIRMA}")
+    return _send(to_email, subject, text)

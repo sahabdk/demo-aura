@@ -2,9 +2,10 @@
 import logging
 import re
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse
 
 from .config import WEBHOOK_SECRET, LEADER_GROUP_CHAT_ID
-from . import db, telegram, menu
+from . import db, telegram, menu, reference
 from .agent import run_agent
 from .scheduler import start_scheduler
 
@@ -25,6 +26,19 @@ def _startup():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+# ---------- Kundeportal: indtast referencenummer ----------
+
+@app.get("/ref/{token}", response_class=HTMLResponse)
+def ref_get(token: str):
+    return reference.portal_page(token)
+
+
+@app.post("/ref/{token}", response_class=HTMLResponse)
+async def ref_post(token: str, request: Request):
+    form = await request.form()
+    return reference.submit_reference(token, form.get("reference", ""))
 
 
 @app.post("/telegram/{secret}")

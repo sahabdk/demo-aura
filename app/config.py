@@ -15,3 +15,12 @@ LEADER_GROUP_CHAT_ID = os.environ.get("LEADER_GROUP_CHAT_ID", "")
 DB_PATH = os.environ.get("DB_PATH", "aura.db")
 TZ = os.environ.get("TZ", "Europe/Copenhagen")
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
+
+# --- Referencenummer-portal ---
+# Komma-liste over de store kunders kundenumre (kun disse jagtes for manglende reference)
+REF_CUSTOMERS = [c.strip() for c in os.environ.get("REF_CUSTOMERS", "").split(",") if c.strip()]
+# Offentlig URL til appen (bruges til at bygge portal-links), fx https://aura-production.up.railway.app
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
+# Påmindelse: send igen efter X dage hvis kunden ikke har udfyldt, maks Y mails i alt
+REF_REMINDER_DAGE = int(os.environ.get("REF_REMINDER_DAGE", "3"))
+REF_MAX_MAILS = int(os.environ.get("REF_MAX_MAILS", "2"))

@@ -227,6 +227,24 @@ def close_case(case_number, work_done=""):
     return {"status_id": sid}
 
 
+# ---------- Reference-scanning (kundeportal) ----------
+
+def cases_for_customer(customer_number):
+    """Alle sager på en bestemt kunde."""
+    return _data(_req("GET", "/cases", params={
+        "customer_number": customer_number, "sortby": "-created_at", "pagesize": 100,
+    })) or []
+
+
+def has_reference(case):
+    return bool((case.get("yourref") or "").strip())
+
+
+def is_closed(case):
+    sid = closed_status_id()
+    return sid is not None and str(case.get("status")) == str(sid)
+
+
 # ---------- Invoices (fakturaer) ----------
 
 def overdue_unpaid_invoices():
