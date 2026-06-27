@@ -19,18 +19,21 @@ log = logging.getLogger("aura.reference")
 # ---------- planlagt scanning ----------
 
 def scan_and_notify():
-    """Kører planlagt: find sager uden reference hos de store kunder og mail dem."""
-    if not config.REF_CUSTOMERS:
-        return
-    if not config.APP_BASE_URL:
-        log.warning("APP_BASE_URL mangler — kan ikke bygge portal-links; springer scanning over")
-        return
+    """Kører planlagt: find sager uden reference hos de store kunder og mail dem.
+    Returnerer diagnostik pr. kunde, så vi kan se hvor evt. sager filtreres fra."""
+    stats = {"kunder": {}}
+    if not config.REF_CUSTOMERS or not config.APP_BASE_URL:
+        return stats
 
     for cn in config.REF_CUSTOMERS:
+        s = {"sager": 0, "uden_ref": 0, "aabne_uden_ref": 0, "email": False,
+             "oprettet": 0, "fejl": None}
         try:
             debtor = os_api.get_debtor(cn) or {}
             cases = os_api.cases_for_customer(cn)
-        except Exception:
+        except Exception as e:
+            s["fejl"] = str(e)[:80]
+            stats["kunder"][cn] = s
             log.exception("ref-scan: kunne ikke hente kunde %s", cn)
             continue
 
@@ -38,6 +41,8 @@ def scan_and_notify():
         navn = debtor.get("customer_name") or "kunde"
         adresse = (f"{debtor.get('customer_address','')} {debtor.get('customer_postalcode','')} "
                    f"{debtor.get('customer_city','')}").strip()
+        s["email"] = bool(email)
+        s["sager"] = len(cases)
 
         for case in cases:
             nr = case.get("case_number")
@@ -50,8 +55,10 @@ def scan_and_notify():
                 if rec and rec["status"] == "pending":
                     db.mark_ref_done_by_case(nr, (case.get("yourref") or "").strip())
                 continue
+            s["uden_ref"] += 1
             if os_api.is_closed(case):
                 continue
+            s["aabne_uden_ref"] += 1
             if not email:
                 continue
 
@@ -60,8 +67,12 @@ def scan_and_notify():
                 token = secrets.token_urlsafe(16)
                 db.create_ref_request(token, nr, cn)
                 _send(token, navn, email, sag_tekst, reminder=False)
+                s["oprettet"] += 1
             elif rec["status"] == "pending" and _should_remind(rec):
                 _send(rec["token"], navn, email, sag_tekst, reminder=True)
+
+        stats["kunder"][cn] = s
+    return stats
 
 
 def _send(token, navn, email, sag_tekst, reminder):
@@ -174,16 +185,30 @@ def scan_and_links(maks=20):
         return "Ingen store kunder er konfigureret endnu (sæt REF_CUSTOMERS i Railway)."
     if not config.APP_BASE_URL:
         return "APP_BASE_URL mangler — sæt den i Railway, så jeg kan lave portal-links."
+    stats = {}
     try:
-        scan_and_notify()
+        stats = scan_and_notify()
     except Exception:
         log.exception("manuel ref-scan fejlede")
     pend = db.pending_ref_requests()
-    if not pend:
-        return "Ingen åbne sager mangler referencenummer hos de store kunder. 👍"
-    linjer = [f"- Sag {p['case_number']}: {config.APP_BASE_URL}/ref/{p['token']}" for p in pend[:maks]]
-    ekstra = f"\n… og {len(pend) - maks} mere" if len(pend) > maks else ""
-    return f"🔗 Sager der mangler referencenummer ({len(pend)}):\n" + "\n".join(linjer) + ekstra
+    if pend:
+        linjer = [f"- Sag {p['case_number']}: {config.APP_BASE_URL}/ref/{p['token']}" for p in pend[:maks]]
+        ekstra = f"\n… og {len(pend) - maks} mere" if len(pend) > maks else ""
+        return f"🔗 Sager der mangler referencenummer ({len(pend)}):\n" + "\n".join(linjer) + ekstra
+
+    # Intet oprettet -> vis diagnostik så vi kan se hvorfor
+    diag = []
+    for cn, s in (stats.get("kunder") or {}).items():
+        if s.get("fejl"):
+            diag.append(f"- {cn}: FEJL {s['fejl']}")
+        else:
+            diag.append(f"- {cn}: {s['sager']} sager · {s['aabne_uden_ref']} åbne uden ref · "
+                        f"email={'ja' if s['email'] else 'nej'}")
+    if not diag:
+        return ("Ingen kunder blev scannet. Tjek at REF_CUSTOMERS er sat i Railway "
+                f"(lige nu: {config.REF_CUSTOMERS or 'tom'}).")
+    return ("Ingen portal-links oprettet. Diagnostik (kunde: antal sager · åbne uden ref · har email):\n"
+            + "\n".join(diag))
 
 
 def _notify_leder(rec, reference):
