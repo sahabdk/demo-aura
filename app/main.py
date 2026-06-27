@@ -61,14 +61,6 @@ async def telegram_webhook(secret: str, request: Request):
         telegram.send_message(chat["id"], "Du har ikke adgang til Aura. Kontakt din leder.")
         return {"ok": True}
 
-    # Menu-kommando (kun leder)
-    if msg.get("text") and msg["text"].strip().lower() in ("/menu", "menu"):
-        if user["rolle"] == "pro":
-            menu.send_main_menu(chat["id"])
-        else:
-            telegram.send_message(chat["id"], "Menuen er kun for lederen.")
-        return {"ok": True}
-
     # Tekst eller talebesked
     if msg.get("text"):
         text = msg["text"]
@@ -81,6 +73,10 @@ async def telegram_webhook(secret: str, request: Request):
             _notify_leader(f"Whisper-fejl: {e}")
             return {"ok": True}
     else:
+        return {"ok": True}
+
+    # Menu-kommandoer (kun leder) — virker både skrevet og talt (fx "menu", "nye ordrer")
+    if user["rolle"] == "pro" and menu.try_command(chat["id"], from_id, text):
         return {"ok": True}
 
     ctx = {"telegram_id": from_id, "navn": user["navn"], "rolle": user["rolle"]}

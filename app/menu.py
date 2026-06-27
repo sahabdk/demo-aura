@@ -1,4 +1,5 @@
 """Knap-menu til lederen (pro): nye ordrer, detaljer-udfold og tildel — via Telegram inline-knapper."""
+import re
 from datetime import datetime
 from . import ordrestyring as os_api
 from . import db
@@ -31,24 +32,45 @@ def _ordre_knapper(nr):
 def send_main_menu(chat_id):
     telegram.send_buttons(chat_id, "📋 Hvad vil du se?", [
         [("🆕 Nye ordrer", "nye")],
+        [("📋 Dagens ordrer", "dagens")],
         [("🧾 Forfaldne fakturaer", "fakt")],
         [("📅 Dagens aftaler", "aft")],
     ])
 
 
-# ---------- nye ordrer ----------
+# ---------- nye / dagens ordrer ----------
+
+def _vis_ordre_liste(chat_id, cases, header, tom):
+    if not cases:
+        telegram.send_message(chat_id, tom)
+        return
+    if len(cases) > 20:
+        # For mange til knapper -> kompakt liste + antal (ingen spam)
+        linjer = [f"- {_kort(c)}" for c in cases[:40]]
+        ekstra = f"\n… og {len(cases) - 40} flere" if len(cases) > 40 else ""
+        telegram.send_message(
+            chat_id,
+            f"{header}: {len(cases)} ordrer — det er for mange til at vise med knapper. Her er overblikket:\n"
+            + "\n".join(linjer) + ekstra
+            + "\n\nSig fx \"vis sag 124\" for detaljer og tildeling på en bestemt ordre.")
+        return
+    telegram.send_message(chat_id, f"{header}: {len(cases)}")
+    for case in cases:
+        telegram.send_buttons(chat_id, _kort(case), _ordre_knapper(case.get("case_number")))
+
 
 def vis_nye_ordrer(chat_id, telegram_id):
     since = db.get_last_seen_order(telegram_id)
     cases = os_api.new_cases(since)
-    if not cases:
-        telegram.send_message(chat_id, "Ingen nye ordrer siden sidst. 👍")
-        return
-    telegram.send_message(chat_id, f"🆕 {len(cases)} nye ordrer siden sidst:")
-    for case in cases[:15]:
-        telegram.send_buttons(chat_id, _kort(case), _ordre_knapper(case.get("case_number")))
-    newest = max((int(c.get("created_at") or 0) for c in cases), default=since)
-    db.set_last_seen_order(telegram_id, newest + 1)
+    _vis_ordre_liste(chat_id, cases, "🆕 Nye ordrer siden sidst", "Ingen nye ordrer siden sidst. 👍")
+    if cases:
+        newest = max((int(c.get("created_at") or 0) for c in cases), default=since)
+        db.set_last_seen_order(telegram_id, newest + 1)
+
+
+def vis_dagens_ordrer(chat_id, telegram_id):
+    cases = os_api.today_cases()
+    _vis_ordre_liste(chat_id, cases, "📋 Dagens ordrer", "Ingen ordrer i dag.")
 
 
 # ---------- detaljer ----------
@@ -139,6 +161,32 @@ def vis_aftaler(chat_id, telegram_id):
     telegram.send_message(chat_id, "📅 Dagens aftaler:\n" + "\n".join(linjer))
 
 
+# ---------- tekst/stemme-kommandoer ----------
+
+def try_command(chat_id, telegram_id, text):
+    """Returnerer True hvis teksten (skrevet ELLER talt) var en menu-kommando."""
+    t = (text or "").strip().lower()
+    if t in ("/menu", "menu"):
+        send_main_menu(chat_id)
+        return True
+    if "nye ordre" in t:
+        vis_nye_ordrer(chat_id, telegram_id)
+        return True
+    if "dagens ordre" in t:
+        vis_dagens_ordrer(chat_id, telegram_id)
+        return True
+    m = re.search(r"sag\s+(\d+)", t)
+    if m and ("vis" in t or "detalj" in t):
+        nr = m.group(1)
+        case = os_api.get_case(nr)
+        if case:
+            telegram.send_buttons(chat_id, _kort(case), _ordre_knapper(nr))
+        else:
+            telegram.send_message(chat_id, f"Fandt ingen sag {nr}.")
+        return True
+    return False
+
+
 # ---------- callback-routing ----------
 
 def handle_callback(cq):
@@ -151,6 +199,8 @@ def handle_callback(cq):
 
     if data == "nye":
         vis_nye_ordrer(chat_id, from_id)
+    elif data == "dagens":
+        vis_dagens_ordrer(chat_id, from_id)
     elif data == "fakt":
         vis_forfaldne(chat_id)
     elif data == "aft":

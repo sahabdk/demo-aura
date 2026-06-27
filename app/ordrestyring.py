@@ -207,7 +207,16 @@ def overdue_unpaid_invoices():
 def new_cases(since_ts):
     """Sager oprettet efter since_ts (unix). Nyeste først."""
     return _data(_req("GET", "/cases", params={
-        "created_at-min": int(since_ts), "sortby": "-created_at", "pagesize": 50,
+        "created_at-min": int(since_ts), "sortby": "-created_at", "pagesize": 100,
+    })) or []
+
+
+def today_cases():
+    """Alle sager oprettet i dag (uanset om de er set). Nyeste først."""
+    import datetime as _dt
+    start = int(_dt.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    return _data(_req("GET", "/cases", params={
+        "created_at-min": start, "sortby": "-created_at", "pagesize": 100,
     })) or []
 
 
