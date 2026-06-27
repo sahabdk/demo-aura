@@ -40,45 +40,55 @@ def send_main_menu(chat_id):
 
 # ---------- nye / dagens ordrer ----------
 
-def _vis_ordre_liste(chat_id, cases, header, tom, pin=False, footer=False):
-    if not cases:
-        telegram.send_message(chat_id, tom)
-        return
-    if len(cases) > 20:
-        # For mange til knapper -> kompakt liste + antal (ingen spam)
-        linjer = [f"- {_kort(c)}" for c in cases[:40]]
-        ekstra = f"\n… og {len(cases) - 40} flere" if len(cases) > 40 else ""
-        telegram.send_message(
-            chat_id,
-            f"{header}: {len(cases)} ordrer — det er for mange til at vise med knapper. Her er overblikket:\n"
-            + "\n".join(linjer) + ekstra
-            + "\n\nSig fx \"vis sag 124\" for detaljer og tildeling på en bestemt ordre.")
-        return
-    mid = telegram.send_and_get_id(chat_id, f"{header}: {len(cases)}")
+PER_SIDE = 10
+
+
+def _send_batch(chat_id, cases, offset, header_base, naeste_cb, slut_besked, slut_knapper, pin=False):
+    """Vis 10 ordrer ad gangen med knapper. Returnerer True hvis det var sidste side."""
+    total = len(cases)
+    batch = cases[offset:offset + PER_SIDE]
+    omfang = f" ({offset + 1}-{offset + len(batch)})" if total > PER_SIDE else ""
+    mid = telegram.send_and_get_id(chat_id, f"{header_base}: {total}{omfang}")
     if pin and mid:
         telegram.pin_message(chat_id, mid)
-    for case in cases:
+    for case in batch:
         telegram.send_buttons(chat_id, _kort(case), _ordre_knapper(case.get("case_number")))
-    if footer:
-        telegram.send_buttons(chat_id, "↓ Det var de nye ordrer.",
-                              [[("📋 Se alle dagens ordrer", "dagens")]])
+    if offset + PER_SIDE < total:
+        rest = total - offset - PER_SIDE
+        telegram.send_buttons(chat_id, f"↓ {rest} ordrer mere", [[("📋 Vis næste 10", naeste_cb)]])
+        return False
+    if slut_besked:
+        telegram.send_buttons(chat_id, slut_besked, slut_knapper)
+    return True
 
 
-def vis_nye_ordrer(chat_id, telegram_id):
+def vis_nye_ordrer(chat_id, telegram_id, offset=0, since=None, pin=True):
     # Strengt kun i dag + kun siden sidst (ingen gentagelse, intet fra tidligere dage)
-    start_idag = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
-    since = max(db.get_last_seen_order(telegram_id), start_idag)
+    if since is None:
+        start_idag = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        since = max(db.get_last_seen_order(telegram_id), start_idag)
     cases = os_api.new_cases(since)
-    _vis_ordre_liste(chat_id, cases, "🆕 Nye ordrer i dag", "Ingen nye ordrer siden sidst. 👍",
-                     pin=True, footer=True)
-    if cases:
+    if not cases:
+        telegram.send_message(chat_id, "Ingen nye ordrer siden sidst i dag. 👍")
+        return
+    faerdig = _send_batch(
+        chat_id, cases, offset, "🆕 Nye ordrer i dag",
+        f"nyeside:{offset + PER_SIDE}:{since}",
+        "↓ Det var alle nye ordrer.", [[("📋 Se alle dagens ordrer", "dagens")]],
+        pin=pin,
+    )
+    if faerdig:
         newest = max((int(c.get("created_at") or 0) for c in cases), default=since)
         db.set_last_seen_order(telegram_id, newest + 1)
 
 
-def vis_dagens_ordrer(chat_id, telegram_id):
+def vis_dagens_ordrer(chat_id, telegram_id, offset=0):
     cases = os_api.today_cases()
-    _vis_ordre_liste(chat_id, cases, "📋 Dagens ordrer", "Ingen ordrer i dag.")
+    if not cases:
+        telegram.send_message(chat_id, "Ingen ordrer i dag.")
+        return
+    _send_batch(chat_id, cases, offset, "📋 Dagens ordrer",
+                f"dagside:{offset + PER_SIDE}", "", None, pin=False)
 
 
 # ---------- detaljer ----------
@@ -213,6 +223,11 @@ def handle_callback(cq):
         vis_forfaldne(chat_id)
     elif data == "aft":
         vis_aftaler(chat_id, from_id)
+    elif data.startswith("nyeside:"):
+        _, offset, since = data.split(":")
+        vis_nye_ordrer(chat_id, from_id, offset=int(offset), since=int(since), pin=False)
+    elif data.startswith("dagside:"):
+        vis_dagens_ordrer(chat_id, from_id, offset=int(data.split(":", 1)[1]))
     elif data.startswith("det:"):
         vis_detaljer(chat_id, message_id, data.split(":", 1)[1])
     elif data.startswith("skjul:"):
