@@ -124,6 +124,7 @@ def _page(indhold: str, titel: str = "Referencenummer") -> str:
   h1{{font-size:20px;margin:0 0 4px}} .firma{{color:#6b7280;font-size:14px;margin-bottom:20px}}
   .sag{{background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin:16px 0;
        font-size:15px;color:#374151}}
+  .sag div{{margin:4px 0}} .etiket{{font-weight:600;color:#6b7280;margin-right:6px}}
   label{{display:block;font-weight:600;margin:18px 0 6px}}
   input[type=text]{{width:100%;box-sizing:border-box;padding:13px;font-size:17px;border:1px solid #d1d5db;
        border-radius:10px}}
@@ -149,8 +150,21 @@ def portal_page(token: str) -> str:
     debtor = os_api.get_debtor(rec["customer_number"]) or {}
     adresse = (f"{debtor.get('customer_address','')} {debtor.get('customer_postalcode','')} "
                f"{debtor.get('customer_city','')}").strip()
-    besk = case.get("description") or "opgave"
-    sag = html.escape(f"Sag {rec['case_number']}: {besk}" + (f" – {adresse}" if adresse else ""))
+    besk = (case.get("description") or "").strip() or "—"
+    dato = ""
+    try:
+        ca = case.get("created_at")
+        if ca:
+            dato = datetime.fromtimestamp(int(ca)).strftime("%d-%m-%Y")
+    except (ValueError, TypeError, OSError):
+        dato = ""
+    raekker = [("Sag", rec["case_number"]), ("Opgave / projekt", besk)]
+    if adresse:
+        raekker.append(("Adresse", adresse))
+    if dato:
+        raekker.append(("Dato", dato))
+    sag = "".join(f"<div><span class='etiket'>{html.escape(k)}:</span>{html.escape(str(v))}</div>"
+                  for k, v in raekker)
     return _page(
         "<h1>Indtast referencenummer</h1>"
         "<p>Vi mangler et referencenummer for at kunne fakturere denne opgave korrekt.</p>"
