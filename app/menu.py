@@ -16,10 +16,20 @@ def _kundenavn(customer_number):
         return None
 
 
+def _er_tildelt(case):
+    """True hvis sagen allerede har en ansvarlig medarbejder."""
+    tech = case.get("main_technician")
+    return bool(tech) and str(tech) not in ("0", "None", "")
+
+
 def _kort(case):
     nr = case.get("case_number")
     kunde = _kundenavn(case.get("customer_number")) or "ukendt"
     desc = (case.get("description") or "")[:50]
+    if _er_tildelt(case):
+        # Grønt flueben + hvem den er tildelt = overblik for mesteren over hvad der er bearbejdet
+        navn = os_api.user_name(case.get("main_technician")) or "tildelt"
+        return f"✅ Sag {nr} · {kunde} · {desc} · → {navn}".replace(" ·  · ", " · ").rstrip(" ·")
     return f"Sag {nr} · {kunde} · {desc}".rstrip(" ·")
 
 
