@@ -300,3 +300,53 @@ def link_leveringsadresse(case_number, customer_number, tekst):
         raise RuntimeError("kunne ikke finde eller oprette leveringsadresse")
     _req("PUT", f"/cases/{case_number}", json={"delivery_address": int(da_id)})
     return {"id": da_id, "oprettet": oprettet, "adresse": tekst}
+
+
+# ---------- Kontaktpersoner (debtor contacts) ----------
+
+def debtor_contacts(customer_number):
+    """Kundens kontaktpersoner (hentes som include på kunden). Hver har: id, name,
+    email, telephone, mobile, address, postalcode, city."""
+    d = _data(_req("GET", f"/debtors/{customer_number}", params={"include": "contacts"})) or {}
+    cs = d.get("contacts")
+    return cs if isinstance(cs, list) else []
+
+
+def set_debtor_contacts(customer_number, contacts):
+    """Skriver kundens fulde kontaktliste (PUT). Send ALTID de eksisterende med, så
+    intet overskrives."""
+    return _data(_req("PUT", f"/debtors/{customer_number}/contacts", json=contacts))
+
+
+def link_kontaktperson(case_number, customer_number, navn, email="", telefon=""):
+    """Find en kontaktperson på kunden ud fra navn ELLER opret en ny, og sæt dens id
+    på sagens contact-felt (det er det Kontaktperson-kortet viser)."""
+    navn_l = (navn or "").strip().lower()
+    if not navn_l:
+        raise RuntimeError("tomt kontaktperson-navn")
+    eksisterende = []
+    try:
+        eksisterende = debtor_contacts(customer_number)
+    except Exception:
+        eksisterende = []
+    match = next((c for c in eksisterende if (c.get("name") or "").strip().lower() == navn_l), None)
+    oprettet = False
+    if not match:
+        ny = {"name": navn}
+        if email:
+            ny["email"] = email
+        if telefon:
+            ny["telephone"] = telefon
+        # bevar eksisterende kontakter + tilføj den nye
+        set_debtor_contacts(customer_number, eksisterende + [ny])
+        oprettet = True
+        try:
+            eksisterende = debtor_contacts(customer_number)
+        except Exception:
+            pass
+        match = next((c for c in eksisterende if (c.get("name") or "").strip().lower() == navn_l), None)
+    cid = (match or {}).get("id")
+    if not cid:
+        raise RuntimeError("kunne ikke finde eller oprette kontaktperson")
+    _req("PUT", f"/cases/{case_number}", json={"contact": str(cid)})
+    return {"id": cid, "oprettet": oprettet, "navn": navn}

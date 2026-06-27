@@ -94,8 +94,12 @@ def _set_kontakt_levering(sagsnummer, customer_number, args):
     # Begge dele er IKKE-fatale: en fejl her må aldrig vælte selve sag-oprettelsen.
     if args.get("kontaktperson"):
         try:
-            os_api.update_case(sagsnummer, kontaktperson=args["kontaktperson"])
-            out["kontaktperson"] = args["kontaktperson"]
+            kn = customer_number or (os_api.get_case(sagsnummer) or {}).get("customer_number")
+            if not kn:
+                out["kontaktperson_fejl"] = "kunne ikke finde kundenummer på sagen"
+            else:
+                info = os_api.link_kontaktperson(sagsnummer, kn, args["kontaktperson"])
+                out["kontaktperson"] = ("oprettet og sat" if info.get("oprettet") else "sat") + f": {info.get('navn')}"
         except Exception as e:
             out["kontaktperson_fejl"] = str(e)
     if args.get("leveringsadresse"):
