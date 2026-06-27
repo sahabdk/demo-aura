@@ -24,3 +24,5 @@ APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
 # Påmindelse: send igen efter X dage hvis kunden ikke har udfyldt, maks Y mails i alt
 REF_REMINDER_DAGE = int(os.environ.get("REF_REMINDER_DAGE", "3"))
 REF_MAX_MAILS = int(os.environ.get("REF_MAX_MAILS", "2"))
+# Hvor mange dage tilbage scanningen kigger efter sager (created_at-filter)
+REF_SCAN_DAGE = int(os.environ.get("REF_SCAN_DAGE", "14"))

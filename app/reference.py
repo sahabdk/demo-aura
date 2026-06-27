@@ -25,17 +25,30 @@ def scan_and_notify():
     if not config.REF_CUSTOMERS or not config.APP_BASE_URL:
         return stats
 
+    # Ét opslag: seneste sager på tværs af kunder (kan ikke filtreres pr. kunde i API'et)
+    try:
+        alle = os_api.recent_cases(days=config.REF_SCAN_DAGE)
+    except Exception as e:
+        stats["fejl"] = str(e)[:120]
+        log.exception("ref-scan: kunne ikke hente seneste sager")
+        return stats
+    big = {str(c) for c in config.REF_CUSTOMERS}
+    pr_kunde = {}
+    for case in alle:
+        cnr = str(case.get("customer_number"))
+        if cnr in big:
+            pr_kunde.setdefault(cnr, []).append(case)
+
     for cn in config.REF_CUSTOMERS:
         s = {"sager": 0, "uden_ref": 0, "aabne_uden_ref": 0, "email": False,
              "oprettet": 0, "fejl": None}
         try:
             debtor = os_api.get_debtor(cn) or {}
-            cases = os_api.cases_for_customer(cn)
         except Exception as e:
             s["fejl"] = str(e)[:80]
             stats["kunder"][cn] = s
-            log.exception("ref-scan: kunne ikke hente kunde %s", cn)
             continue
+        cases = pr_kunde.get(str(cn), [])
 
         email = (debtor.get("customer_email") or "").strip()
         navn = debtor.get("customer_name") or "kunde"
@@ -197,6 +210,8 @@ def scan_and_links(maks=20):
         return f"🔗 Sager der mangler referencenummer ({len(pend)}):\n" + "\n".join(linjer) + ekstra
 
     # Intet oprettet -> vis diagnostik så vi kan se hvorfor
+    if stats.get("fejl"):
+        return f"Scanning fejlede ved opslag af seneste sager: {stats['fejl']}"
     diag = []
     for cn, s in (stats.get("kunder") or {}).items():
         if s.get("fejl"):

@@ -229,11 +229,24 @@ def close_case(case_number, work_done=""):
 
 # ---------- Reference-scanning (kundeportal) ----------
 
-def cases_for_customer(customer_number):
-    """Alle sager på en bestemt kunde."""
-    return _data(_req("GET", "/cases", params={
-        "customer_number": customer_number, "sortby": "-created_at", "pagesize": 100,
-    })) or []
+def recent_cases(days=14, maks_sider=30):
+    """Sager oprettet inden for de seneste 'days' dage (på tværs af kunder).
+    /cases kan IKKE filtreres på customer_number (giver 500), så vi henter seneste sager
+    via created_at-filteret og filtrerer pr. kunde i Python."""
+    import datetime as _dt
+    start = int((_dt.datetime.now() - _dt.timedelta(days=days)).timestamp())
+    rows, page = [], 1
+    while page <= maks_sider:
+        batch = _data(_req("GET", "/cases", params={
+            "created_at-min": start, "sortby": "-created_at", "page": page, "pagesize": 100,
+        })) or []
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return rows
 
 
 def has_reference(case):
