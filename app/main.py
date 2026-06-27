@@ -87,13 +87,18 @@ async def telegram_webhook(secret: str, request: Request):
     if user["rolle"] == "pro" and menu.try_command(chat["id"], from_id, text):
         return {"ok": True}
 
-    # Svarer brugeren (Telegram-reply) på en ordre-besked? Så ved vi hvilken sag det
-    # gælder — giv agenten konteksten, så hun ikke spørger "hvilken sag?".
+    # Svarer brugeren (Telegram-reply) på en besked? Så er det ALTID en tilføjelse til en
+    # eksisterende sag — aldrig en ny sag. Kan vi læse sagsnummeret, giver vi det med.
     reply = msg.get("reply_to_message")
     if reply and reply.get("text"):
         m = re.search(r"[Ss]ag\s+(\d+)", reply["text"])
         if m:
-            text = f"(Brugeren svarer på sag {m.group(1)} — beskeden gælder DEN sag.) {text}"
+            text = (f"(Brugeren svarer på sag {m.group(1)} — beskeden er en TILFØJELSE til DEN sag, "
+                    f"ikke en ny sag.) {text}")
+        else:
+            text = ("(Brugeren svarer på en tidligere besked — det er en TILFØJELSE til en "
+                    "eksisterende sag, ALDRIG en ny sag. Er du i tvivl om hvilken sag, så spørg "
+                    f"kort i stedet for at oprette noget.) {text}")
 
     ctx = {"telegram_id": from_id, "navn": user["navn"], "rolle": user["rolle"]}
     try:

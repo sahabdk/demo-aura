@@ -23,14 +23,23 @@ TEMPLATES = {
 }
 
 
-def send_payment_reminder(to_email: str, navn: str, level: int):
+def send_payment_reminder(to_email: str, navn: str, level: int,
+                          beloeb: str = None, forfald: str = None) -> str:
+    """Sender en eskalerende rykker. Returnerer 'sent' ved rigtig afsendelse eller
+    'dry-run' hvis SMTP ikke er konfigureret (så kalderen ved at intet blev sendt)."""
     subject, body = TEMPLATES.get(level, TEMPLATES[1])
-    text = f"Kære {navn},\n\n{body}\n\nVenlig hilsen\n{FIRMA}"
+    detaljer = ""
+    if beloeb:
+        detaljer = f"\n\nSkyldigt beløb: {beloeb} kr."
+        if forfald:
+            detaljer += f" (forfald {forfald})"
+        detaljer += "."
+    text = f"Kære {navn},\n\n{body}{detaljer}\n\nVenlig hilsen\n{FIRMA}"
 
     host = os.environ.get("SMTP_HOST")
     if not host:
         print(f"[EMAIL/dry-run] -> {to_email} | {subject}\n{text}")
-        return
+        return "dry-run"
 
     msg = MIMEText(text)
     msg["Subject"] = subject
@@ -40,3 +49,4 @@ def send_payment_reminder(to_email: str, navn: str, level: int):
         s.starttls()
         s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
         s.send_message(msg)
+    return "sent"

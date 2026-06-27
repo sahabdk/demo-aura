@@ -351,27 +351,26 @@ def _gem_kunde_kontakter(customer_number, d, contacts):
     return _data(_req("PUT", f"/debtors/{customer_number}", json=body))
 
 
-def link_kontaktperson(case_number, customer_number, navn, email="", telefon=""):
-    """Find en kontaktperson på kunden ud fra navn ELLER opret en ny, og sæt dens id
-    på sagens contact-felt (det er det Kontaktperson-kortet viser)."""
+def link_kontaktperson(case_number, customer_number, navn):
+    """Sæt kontaktperson på sagen så det rammer Kontaktperson-KORTET hvis muligt.
+
+    Det kræver en kontakt der ALLEREDE findes på kunden (at oprette nye kontakter
+    understøttes ikke af ordrestyrings v2-API). Findes navnet som kontakt -> link dens
+    id til sagens contact-felt (kortet). Findes det ikke -> læg navnet i Rekvirenten,
+    som er synligt på ordren. Returnerer hvilken metode der blev brugt."""
     navn_l = (navn or "").strip().lower()
     if not navn_l:
         raise RuntimeError("tomt kontaktperson-navn")
-    d, eksisterende = _debtor_med_kontakter(customer_number)
-    match = next((c for c in eksisterende if (c.get("name") or "").strip().lower() == navn_l), None)
-    oprettet = False
-    if not match:
-        ny = {"name": navn}
-        if email:
-            ny["email"] = email
-        if telefon:
-            ny["telephone"] = telefon
-        _gem_kunde_kontakter(customer_number, d, eksisterende + [ny])  # bevarer eksisterende
-        oprettet = True
-        _, eksisterende = _debtor_med_kontakter(customer_number)       # genhent for at få id
-        match = next((c for c in eksisterende if (c.get("name") or "").strip().lower() == navn_l), None)
+    match = None
+    try:
+        _, contacts = _debtor_med_kontakter(customer_number)
+        match = next((c for c in contacts if (c.get("name") or "").strip().lower() == navn_l), None)
+    except Exception:
+        match = None
     cid = (match or {}).get("id")
-    if not cid:
-        raise RuntimeError("kunne ikke finde eller oprette kontaktperson")
-    _req("PUT", f"/cases/{case_number}", json={"contact": str(cid)})
-    return {"id": cid, "oprettet": oprettet, "navn": navn}
+    if cid:
+        _req("PUT", f"/cases/{case_number}", json={"contact": str(cid)})
+        return {"metode": "kort", "navn": navn}
+    # Ingen eksisterende kontakt -> synligt fallback i Rekvirenten
+    update_case(case_number, requestor=navn)
+    return {"metode": "rekvirent", "navn": navn}

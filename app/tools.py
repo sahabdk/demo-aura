@@ -93,12 +93,17 @@ def _set_kontakt_levering(sagsnummer, customer_number, args):
         return out
     # Begge dele er IKKE-fatale: en fejl her må aldrig vælte selve sag-oprettelsen.
     if args.get("kontaktperson"):
-        # Kontaktperson-kortet er ID-baseret og kan ikke skrives via ordrestyrings v2-API
-        # (alle skrive-metoder afvises/fejler). Vi lægger navnet i Rekvirent-feltet, som
-        # er synligt på ordren og kan skrives uden problemer.
         try:
-            os_api.update_case(sagsnummer, requestor=args["kontaktperson"])
-            out["kontaktperson"] = args["kontaktperson"]
+            kn = customer_number or (os_api.get_case(sagsnummer) or {}).get("customer_number")
+            if not kn:
+                out["kontaktperson_fejl"] = "kunne ikke finde kundenummer på sagen"
+            else:
+                info = os_api.link_kontaktperson(sagsnummer, kn, args["kontaktperson"])
+                if info.get("metode") == "kort":
+                    out["kontaktperson"] = f"{info['navn']} (sat i Kontaktperson-kortet)"
+                else:
+                    out["kontaktperson"] = (f"{info['navn']} (lagt i Rekvirenten — findes ikke som "
+                                            "fast kontakt på kunden, så Kontaktperson-kortet kan ikke udfyldes via API)")
         except Exception as e:
             out["kontaktperson_fejl"] = str(e)
     if args.get("leveringsadresse"):
@@ -147,16 +152,40 @@ def afslut_sag(args, ctx):
 
 
 def send_paamindelse_email(args, ctx):
-    # Eskalerende niveau styres af tælleren i databasen
     nr = str(args["kundenummer"])
     debtor = os_api.get_debtor(nr)
     email = debtor.get("customer_email")
+    navn = debtor.get("customer_name")
     if not email:
-        return {"resultat": "kunden har ingen email - kan ikke sende"}
-    level = db.next_reminder_level(nr)
+        return {"resultat": "kunden har ingen email - kan ikke sende rykker"}
+
+    # Find kundens forfaldne faktura(er) -> nævn beløb og forfald i mailen
+    beloeb = forfald = None
+    try:
+        mine = [r for r in os_api.overdue_unpaid_invoices()
+                if str(r.get("customer_number")) == nr]
+        if mine:
+            total = sum(float(r.get("amount_vat") or 0) for r in mine)
+            beloeb = f"{total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            pd = mine[0].get("payment_date")
+            if pd:
+                forfald = datetime.fromtimestamp(int(pd)).strftime("%d-%m-%Y")
+    except Exception:
+        pass
+
+    # Beregn næste niveau UDEN at gemme endnu (tæl kun op hvis mailen faktisk sendes)
+    level = min(3, db.get_reminder_count(nr) + 1)
     from .email import send_payment_reminder
-    send_payment_reminder(email, debtor.get("customer_name"), level)
-    return {"resultat": f"{level}. påmindelse sendt til {debtor.get('customer_name')}"}
+    try:
+        status = send_payment_reminder(email, navn, level, beloeb=beloeb, forfald=forfald)
+    except Exception as e:
+        return {"fejl": f"rykker kunne ikke sendes: {e}"}
+
+    if status != "sent":
+        return {"resultat": (f"TEST-TILSTAND: ingen rigtig mail sendt (SMTP er ikke sat op endnu). "
+                             f"Det ville have været {level}. påmindelse til {navn}.")}
+    db.set_reminder_count(nr, level)  # tæl først op ved bekræftet afsendelse
+    return {"resultat": f"{level}. påmindelse sendt til {navn} ({email})"}
 
 
 def forfaldne_fakturaer(args, ctx):
