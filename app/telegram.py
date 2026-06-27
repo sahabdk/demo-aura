@@ -39,6 +39,21 @@ def answer_callback(callback_query_id, text: str = ""):
     }, timeout=30)
 
 
+def send_and_get_id(chat_id, text: str):
+    """Send en besked og returnér message_id (til at fastgøre/pinne)."""
+    r = requests.post(f"{API}/sendMessage", json={"chat_id": chat_id, "text": text}, timeout=30)
+    try:
+        return r.json()["result"]["message_id"]
+    except Exception:
+        return None
+
+
+def pin_message(chat_id, message_id):
+    requests.post(f"{API}/pinChatMessage", json={
+        "chat_id": chat_id, "message_id": message_id, "disable_notification": True,
+    }, timeout=30)
+
+
 def _download_voice(file_id: str) -> bytes:
     info = requests.get(f"{API}/getFile", params={"file_id": file_id}, timeout=30).json()
     path = info["result"]["file_path"]

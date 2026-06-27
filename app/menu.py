@@ -40,7 +40,7 @@ def send_main_menu(chat_id):
 
 # ---------- nye / dagens ordrer ----------
 
-def _vis_ordre_liste(chat_id, cases, header, tom):
+def _vis_ordre_liste(chat_id, cases, header, tom, pin=False, footer=False):
     if not cases:
         telegram.send_message(chat_id, tom)
         return
@@ -54,15 +54,23 @@ def _vis_ordre_liste(chat_id, cases, header, tom):
             + "\n".join(linjer) + ekstra
             + "\n\nSig fx \"vis sag 124\" for detaljer og tildeling på en bestemt ordre.")
         return
-    telegram.send_message(chat_id, f"{header}: {len(cases)}")
+    mid = telegram.send_and_get_id(chat_id, f"{header}: {len(cases)}")
+    if pin and mid:
+        telegram.pin_message(chat_id, mid)
     for case in cases:
         telegram.send_buttons(chat_id, _kort(case), _ordre_knapper(case.get("case_number")))
+    if footer:
+        telegram.send_buttons(chat_id, "↓ Det var de nye ordrer.",
+                              [[("📋 Se alle dagens ordrer", "dagens")]])
 
 
 def vis_nye_ordrer(chat_id, telegram_id):
-    since = db.get_last_seen_order(telegram_id)
+    # Strengt kun i dag + kun siden sidst (ingen gentagelse, intet fra tidligere dage)
+    start_idag = int(datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+    since = max(db.get_last_seen_order(telegram_id), start_idag)
     cases = os_api.new_cases(since)
-    _vis_ordre_liste(chat_id, cases, "🆕 Nye ordrer siden sidst", "Ingen nye ordrer siden sidst. 👍")
+    _vis_ordre_liste(chat_id, cases, "🆕 Nye ordrer i dag", "Ingen nye ordrer siden sidst. 👍",
+                     pin=True, footer=True)
     if cases:
         newest = max((int(c.get("created_at") or 0) for c in cases), default=since)
         db.set_last_seen_order(telegram_id, newest + 1)
