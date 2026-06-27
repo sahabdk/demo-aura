@@ -312,10 +312,14 @@ def debtor_contacts(customer_number):
     return cs if isinstance(cs, list) else []
 
 
-def set_debtor_contacts(customer_number, contacts):
-    """Skriver kundens fulde kontaktliste (PUT). Send ALTID de eksisterende med, så
-    intet overskrives."""
-    return _data(_req("PUT", f"/debtors/{customer_number}/contacts", json=contacts))
+def create_debtor_contact(customer_number, navn, email="", telefon=""):
+    """Opretter ÉN kontaktperson på kunden (POST, ufarligt for eksisterende kontakter)."""
+    body = {"name": navn}
+    if email:
+        body["email"] = email
+    if telefon:
+        body["telephone"] = telefon
+    return _data(_req("POST", f"/debtors/{customer_number}/contacts", json=body))
 
 
 def link_kontaktperson(case_number, customer_number, navn, email="", telefon=""):
@@ -324,7 +328,6 @@ def link_kontaktperson(case_number, customer_number, navn, email="", telefon="")
     navn_l = (navn or "").strip().lower()
     if not navn_l:
         raise RuntimeError("tomt kontaktperson-navn")
-    eksisterende = []
     try:
         eksisterende = debtor_contacts(customer_number)
     except Exception:
@@ -332,20 +335,18 @@ def link_kontaktperson(case_number, customer_number, navn, email="", telefon="")
     match = next((c for c in eksisterende if (c.get("name") or "").strip().lower() == navn_l), None)
     oprettet = False
     if not match:
-        ny = {"name": navn}
-        if email:
-            ny["email"] = email
-        if telefon:
-            ny["telephone"] = telefon
-        # bevar eksisterende kontakter + tilføj den nye
-        set_debtor_contacts(customer_number, eksisterende + [ny])
+        ny = create_debtor_contact(customer_number, navn, email, telefon)
+        cid = (ny or {}).get("id")
+        if not cid:  # nogle API'er returnerer ikke det oprettede objekt -> genhent
+            try:
+                match = next((c for c in debtor_contacts(customer_number)
+                              if (c.get("name") or "").strip().lower() == navn_l), None)
+            except Exception:
+                match = None
+            cid = (match or {}).get("id")
         oprettet = True
-        try:
-            eksisterende = debtor_contacts(customer_number)
-        except Exception:
-            pass
-        match = next((c for c in eksisterende if (c.get("name") or "").strip().lower() == navn_l), None)
-    cid = (match or {}).get("id")
+    else:
+        cid = match.get("id")
     if not cid:
         raise RuntimeError("kunne ikke finde eller oprette kontaktperson")
     _req("PUT", f"/cases/{case_number}", json={"contact": str(cid)})
