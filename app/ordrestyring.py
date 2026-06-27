@@ -248,8 +248,10 @@ def assign_case(case_number, technician_id):
 # ---------- Leveringsadresser (delivery addresses) ----------
 
 def delivery_addresses(customer_number):
-    """Kundens gemte leveringsadresser."""
-    return _data(_req("GET", "/delivery-addresses", params={"customer_number": customer_number})) or []
+    """Kundens gemte leveringsadresser. Tabellen 'cust_delivery_addresses' har ikke
+    en 'customer_number'-kolonne at filtrere på, så vi henter siden og filtrerer i Python."""
+    rows = _data(_req("GET", "/delivery-addresses", params={"pagesize": 100})) or []
+    return [d for d in rows if str(d.get("customer_number")) == str(customer_number)]
 
 
 def create_delivery_address(*, customer_number, adresse, postnr="", by="", navn="", att="", telefon="", email=""):
@@ -278,14 +280,17 @@ def link_leveringsadresse(case_number, customer_number, tekst):
     """Find en matchende leveringsadresse hos kunden ELLER opret en ny, og sæt
     dens id på sagens delivery_address-felt. Returnerer hvad der skete."""
     adresse, postnr, by = _split_adresse(tekst)
-    da_id, match = None, None
+    da_id = None
     soeg = (adresse or tekst or "").lower()
     if soeg:
-        for da in delivery_addresses(customer_number):
-            kandidat = f"{da.get('address','')} {da.get('postalcode','')} {da.get('city','')} {da.get('name','')}".lower()
-            if soeg in kandidat or kandidat.strip() and kandidat.split()[0] in soeg:
-                da_id, match = da.get("id"), da
-                break
+        try:  # match er best-effort: må aldrig forhindre oprettelse
+            for da in delivery_addresses(customer_number):
+                kandidat = f"{da.get('address','')} {da.get('postalcode','')} {da.get('city','')} {da.get('name','')}".lower()
+                if soeg in kandidat:
+                    da_id = da.get("id")
+                    break
+        except Exception:
+            da_id = None
     oprettet = False
     if not da_id:
         ny = create_delivery_address(customer_number=customer_number, adresse=adresse, postnr=postnr, by=by)
