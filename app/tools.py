@@ -93,13 +93,12 @@ def _set_kontakt_levering(sagsnummer, customer_number, args):
         return out
     # Begge dele er IKKE-fatale: en fejl her må aldrig vælte selve sag-oprettelsen.
     if args.get("kontaktperson"):
+        # Kontaktperson-kortet er ID-baseret og kan ikke skrives via ordrestyrings v2-API
+        # (alle skrive-metoder afvises/fejler). Vi lægger navnet i Rekvirent-feltet, som
+        # er synligt på ordren og kan skrives uden problemer.
         try:
-            kn = customer_number or (os_api.get_case(sagsnummer) or {}).get("customer_number")
-            if not kn:
-                out["kontaktperson_fejl"] = "kunne ikke finde kundenummer på sagen"
-            else:
-                info = os_api.link_kontaktperson(sagsnummer, kn, args["kontaktperson"])
-                out["kontaktperson"] = ("oprettet og sat" if info.get("oprettet") else "sat") + f": {info.get('navn')}"
+            os_api.update_case(sagsnummer, requestor=args["kontaktperson"])
+            out["kontaktperson"] = args["kontaktperson"]
         except Exception as e:
             out["kontaktperson_fejl"] = str(e)
     if args.get("leveringsadresse"):
