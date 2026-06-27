@@ -312,14 +312,28 @@ def debtor_contacts(customer_number):
     return cs if isinstance(cs, list) else []
 
 
-def create_debtor_contact(customer_number, navn, email="", telefon=""):
-    """Opretter ÉN kontaktperson på kunden (POST, ufarligt for eksisterende kontakter)."""
-    body = {"name": navn}
-    if email:
-        body["email"] = email
-    if telefon:
-        body["telephone"] = telefon
-    return _data(_req("POST", f"/debtors/{customer_number}/contacts", json=body))
+def _debtor_med_kontakter(customer_number):
+    """Henter kunden inkl. dens kontaktliste."""
+    d = _data(_req("GET", f"/debtors/{customer_number}", params={"include": "contacts"})) or {}
+    contacts = d.get("contacts")
+    return d, (contacts if isinstance(contacts, list) else [])
+
+
+def _gem_kunde_kontakter(customer_number, d, contacts):
+    """Gemmer kundens kontaktliste ved at sende den med i en opdatering af hele kunden
+    (kontakt-underressourcen tillader ikke PUT/POST direkte). Påkrævede felter bevares."""
+    body = {
+        "customer_number": customer_number,
+        "customer_name": d.get("customer_name"),
+        "customer_address": d.get("customer_address"),
+        "customer_postalcode": d.get("customer_postalcode"),
+        "customer_city": d.get("customer_city"),
+        "invoice_address": d.get("invoice_address"),
+        "invoice_postalcode": d.get("invoice_postalcode"),
+        "invoice_city": d.get("invoice_city"),
+        "contacts": contacts,
+    }
+    return _data(_req("PUT", f"/debtors/{customer_number}", json=body))
 
 
 def link_kontaktperson(case_number, customer_number, navn, email="", telefon=""):
@@ -328,25 +342,20 @@ def link_kontaktperson(case_number, customer_number, navn, email="", telefon="")
     navn_l = (navn or "").strip().lower()
     if not navn_l:
         raise RuntimeError("tomt kontaktperson-navn")
-    try:
-        eksisterende = debtor_contacts(customer_number)
-    except Exception:
-        eksisterende = []
+    d, eksisterende = _debtor_med_kontakter(customer_number)
     match = next((c for c in eksisterende if (c.get("name") or "").strip().lower() == navn_l), None)
     oprettet = False
     if not match:
-        ny = create_debtor_contact(customer_number, navn, email, telefon)
-        cid = (ny or {}).get("id")
-        if not cid:  # nogle API'er returnerer ikke det oprettede objekt -> genhent
-            try:
-                match = next((c for c in debtor_contacts(customer_number)
-                              if (c.get("name") or "").strip().lower() == navn_l), None)
-            except Exception:
-                match = None
-            cid = (match or {}).get("id")
+        ny = {"name": navn}
+        if email:
+            ny["email"] = email
+        if telefon:
+            ny["telephone"] = telefon
+        _gem_kunde_kontakter(customer_number, d, eksisterende + [ny])  # bevarer eksisterende
         oprettet = True
-    else:
-        cid = match.get("id")
+        _, eksisterende = _debtor_med_kontakter(customer_number)       # genhent for at få id
+        match = next((c for c in eksisterende if (c.get("name") or "").strip().lower() == navn_l), None)
+    cid = (match or {}).get("id")
     if not cid:
         raise RuntimeError("kunne ikke finde eller oprette kontaktperson")
     _req("PUT", f"/cases/{case_number}", json={"contact": str(cid)})
