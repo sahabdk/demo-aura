@@ -85,15 +85,23 @@ def opdater_kunde(args, ctx):
     return {"resultat": "kunde opdateret", "kundenummer": args["kundenummer"]}
 
 
-def _note_kontakt_levering(sagsnummer, args):
-    """Kontaktperson/leveringsadresse er ID-felter -> skriv dem som bemærkning."""
-    dele = []
+def _set_kontakt_levering(sagsnummer, customer_number, args):
+    """Sæt kontaktperson (sagens fri-tekst contact-felt) og/eller leveringsadresse
+    (find-eller-opret en leveringsadresse hos kunden og sæt dens id på sagen)."""
+    out = {}
+    if not sagsnummer:
+        return out
     if args.get("kontaktperson"):
-        dele.append(f"Kontaktperson: {args['kontaktperson']}")
+        os_api.update_case(sagsnummer, kontaktperson=args["kontaktperson"])
+        out["kontaktperson"] = args["kontaktperson"]
     if args.get("leveringsadresse"):
-        dele.append(f"Leveringsadresse: {args['leveringsadresse']}")
-    if dele and sagsnummer:
-        os_api.add_remark(sagsnummer, " · ".join(dele), datetime.now().strftime("%d-%m-%Y"))
+        kn = customer_number or (os_api.get_case(sagsnummer) or {}).get("customer_number")
+        if kn:
+            info = os_api.link_leveringsadresse(sagsnummer, kn, args["leveringsadresse"])
+            out["leveringsadresse"] = ("oprettet og sat" if info.get("oprettet") else "sat") + f": {info.get('adresse')}"
+        else:
+            out["leveringsadresse_fejl"] = "kunne ikke finde kundenummer på sagen"
+    return out
 
 
 def opret_sag(args, ctx):
@@ -104,8 +112,8 @@ def opret_sag(args, ctx):
         projektnavn=args.get("projektnavn", ""),
     )
     sag = res.get("case_number")
-    _note_kontakt_levering(sag, args)
-    return {"resultat": "sag oprettet", "sagsnummer": sag}
+    ekstra = _set_kontakt_levering(sag, args.get("customer_number"), args)
+    return {"resultat": "sag oprettet", "sagsnummer": sag, **ekstra}
 
 
 def opdater_sag(args, ctx):
@@ -119,8 +127,8 @@ def opdater_sag(args, ctx):
         beskrivelse=beskrivelse,
         reference=args.get("reference"),
     )
-    _note_kontakt_levering(args["sagsnummer"], args)
-    return {"resultat": f"Sag {args['sagsnummer']} opdateret"}
+    ekstra = _set_kontakt_levering(args["sagsnummer"], None, args)
+    return {"resultat": f"Sag {args['sagsnummer']} opdateret", **ekstra}
 
 
 def afslut_sag(args, ctx):

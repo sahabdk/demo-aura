@@ -145,7 +145,8 @@ def get_case(case_number):
 CASE_FIELD_MAP = {
     "beskrivelse": "description",
     "reference": "yourref",
-    # kontaktperson/leveringsadresse er ID-baserede felter -> skrives som bemærkning i stedet
+    "kontaktperson": "contact",   # 'contact' er et fri-tekst-felt på sagen (string:100)
+    # leveringsadresse er et ID-felt (delivery_address) -> håndteres via link_leveringsadresse()
 }
 
 
@@ -242,3 +243,55 @@ def user_name(user_id):
 
 def assign_case(case_number, technician_id):
     return _data(_req("PUT", f"/cases/{case_number}", json={"main_technician": int(technician_id)}))
+
+
+# ---------- Leveringsadresser (delivery addresses) ----------
+
+def delivery_addresses(customer_number):
+    """Kundens gemte leveringsadresser."""
+    return _data(_req("GET", "/delivery-addresses", params={"customer_number": customer_number})) or []
+
+
+def create_delivery_address(*, customer_number, adresse, postnr="", by="", navn="", att="", telefon="", email=""):
+    body = {
+        "customer_number": customer_number,
+        "name": navn or "", "address": adresse, "postalcode": postnr, "city": by,
+        "att": att, "telephone": telefon, "email": email,
+    }
+    return _data(_req("POST", "/delivery-addresses", json=body))
+
+
+def _split_adresse(tekst):
+    """Del fri tekst op i (adresse, postnr, by) ud fra et 4-cifret postnummer."""
+    import re as _re
+    tekst = (tekst or "").strip()
+    m = _re.search(r"\b(\d{4})\b", tekst)
+    if not m:
+        return tekst, "", ""
+    postnr = m.group(1)
+    adresse = tekst[:m.start()].strip(" ,")
+    by = tekst[m.end():].strip(" ,")
+    return adresse or tekst, postnr, by
+
+
+def link_leveringsadresse(case_number, customer_number, tekst):
+    """Find en matchende leveringsadresse hos kunden ELLER opret en ny, og sæt
+    dens id på sagens delivery_address-felt. Returnerer hvad der skete."""
+    adresse, postnr, by = _split_adresse(tekst)
+    da_id, match = None, None
+    soeg = (adresse or tekst or "").lower()
+    if soeg:
+        for da in delivery_addresses(customer_number):
+            kandidat = f"{da.get('address','')} {da.get('postalcode','')} {da.get('city','')} {da.get('name','')}".lower()
+            if soeg in kandidat or kandidat.strip() and kandidat.split()[0] in soeg:
+                da_id, match = da.get("id"), da
+                break
+    oprettet = False
+    if not da_id:
+        ny = create_delivery_address(customer_number=customer_number, adresse=adresse, postnr=postnr, by=by)
+        da_id = (ny or {}).get("id")
+        oprettet = True
+    if not da_id:
+        raise RuntimeError("kunne ikke finde eller oprette leveringsadresse")
+    _req("PUT", f"/cases/{case_number}", json={"delivery_address": int(da_id)})
+    return {"id": da_id, "oprettet": oprettet, "adresse": tekst}
