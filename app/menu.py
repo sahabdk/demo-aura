@@ -206,7 +206,7 @@ def try_command(chat_id, telegram_id, text):
     if "dagens ordre" in t:
         vis_dagens_ordrer(chat_id, telegram_id)
         return True
-    if "referenc" in t and ("scan" in t or "tjek" in t):
+    if "refer" in t and any(w in t for w in ("scan", "tjek", "find", "mangl")):
         from . import reference
         telegram.send_message(chat_id, reference.scan_and_links())
         return True
