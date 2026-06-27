@@ -56,6 +56,13 @@ async def telegram_webhook(secret: str, request: Request):
     if chat.get("type") != "private":   # Aura svarer kun i privat chat
         return {"ok": True}
 
+    # Ignorér service-/system-beskeder (fx "pinned a message", medlem tilføjet) og
+    # bot-beskeder — de har ingen rigtig afsender og må ikke udløse adgangs-afvisning.
+    if not (msg.get("text") or msg.get("voice")):
+        return {"ok": True}
+    if msg.get("from", {}).get("is_bot"):
+        return {"ok": True}
+
     from_id = str(msg["from"]["id"])
     user = db.get_user(from_id)
     if not user:

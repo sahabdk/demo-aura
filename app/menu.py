@@ -82,9 +82,9 @@ def vis_nye_ordrer(chat_id, telegram_id, offset=0, since=None, pin=True):
         telegram.send_message(chat_id, "Ingen nye ordrer siden sidst i dag. 👍")
         return
     _send_batch(
-        chat_id, cases, offset, "🆕 Nye ordrer i dag",
+        chat_id, cases, offset, "🆕 Nye ordrer siden sidste tjek",
         f"nyeside:{offset + PER_SIDE}:{since}",
-        "↓ Det var alle nye ordrer.", [[("📋 Se alle dagens ordrer", "dagens")]],
+        "Resten af dagens ordrer 👇", [[("📋 Se alle dagens ordrer", "dagens")]],
         pin=pin,
     )
     # Markér som set MED DET SAMME (allerede ved første side), så et nyt
