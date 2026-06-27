@@ -43,6 +43,10 @@ def init_db():
                 indhold     TEXT NOT NULL,
                 ts          DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS meta (
+                k TEXT PRIMARY KEY,
+                v TEXT
+            );
             """
         )
 
@@ -155,3 +159,26 @@ def save_message(telegram_id, rolle, indhold):
             "INSERT INTO samtaler(telegram_id, rolle, indhold) VALUES(?,?,?)",
             (str(telegram_id), rolle, indhold),
         )
+
+
+# ---- Meta (nøgle/værdi) + "sidst sete ordre" ----
+
+def get_meta(k, default=None):
+    with conn() as c:
+        row = c.execute("SELECT v FROM meta WHERE k=?", (k,)).fetchone()
+        return row["v"] if row else default
+
+
+def set_meta(k, v):
+    with conn() as c:
+        c.execute("INSERT INTO meta(k, v) VALUES(?,?) "
+                  "ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
+
+
+def get_last_seen_order(telegram_id):
+    v = get_meta(f"sidst_ordre:{telegram_id}")
+    return int(v) if v else 0
+
+
+def set_last_seen_order(telegram_id, ts):
+    set_meta(f"sidst_ordre:{telegram_id}", int(ts))

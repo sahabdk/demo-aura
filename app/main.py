@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI, Request, HTTPException
 
 from .config import WEBHOOK_SECRET, LEADER_GROUP_CHAT_ID
-from . import db, telegram
+from . import db, telegram, menu
 from .agent import run_agent
 from .scheduler import start_scheduler
 
@@ -32,6 +32,21 @@ async def telegram_webhook(secret: str, request: Request):
         raise HTTPException(403, "forkert webhook-token")
 
     update = await request.json()
+
+    # Knap-tryk (callback_query) — kun for leder
+    cq = update.get("callback_query")
+    if cq:
+        u = db.get_user(str(cq.get("from", {}).get("id")))
+        if u and u["rolle"] == "pro":
+            try:
+                menu.handle_callback(cq)
+            except Exception as e:
+                log.exception("menu-callback-fejl")
+                _notify_leader(f"Menu-fejl: {e}")
+        else:
+            telegram.answer_callback(cq.get("id"), "Kun lederen har adgang.")
+        return {"ok": True}
+
     msg = update.get("message") or update.get("edited_message")
     if not msg:
         return {"ok": True}
@@ -44,6 +59,14 @@ async def telegram_webhook(secret: str, request: Request):
     user = db.get_user(from_id)
     if not user:
         telegram.send_message(chat["id"], "Du har ikke adgang til Aura. Kontakt din leder.")
+        return {"ok": True}
+
+    # Menu-kommando (kun leder)
+    if msg.get("text") and msg["text"].strip().lower() in ("/menu", "menu"):
+        if user["rolle"] == "pro":
+            menu.send_main_menu(chat["id"])
+        else:
+            telegram.send_message(chat["id"], "Menuen er kun for lederen.")
         return {"ok": True}
 
     # Tekst eller talebesked

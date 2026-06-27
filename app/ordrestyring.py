@@ -200,3 +200,36 @@ def overdue_unpaid_invoices():
     })
     rows = _data(resp) or []
     return [r for r in rows if not r.get("payed_date")]
+
+
+# ---------- Nye ordrer + medarbejdere (til knap-menuen) ----------
+
+def new_cases(since_ts):
+    """Sager oprettet efter since_ts (unix). Nyeste først."""
+    return _data(_req("GET", "/cases", params={
+        "created_at-min": int(since_ts), "sortby": "-created_at", "pagesize": 50,
+    })) or []
+
+
+_USERS = {"rows": [], "ts": 0.0}
+
+
+def users(force=False):
+    now = time.time()
+    if not force and _USERS["rows"] and (now - _USERS["ts"]) < 1800:
+        return _USERS["rows"]
+    _USERS["rows"] = _data(_req("GET", "/users")) or []
+    _USERS["ts"] = now
+    return _USERS["rows"]
+
+
+def user_name(user_id):
+    for u in users():
+        if str(u.get("id")) == str(user_id):
+            nm = u.get("fullName") or f"{u.get('first_name') or ''} {u.get('last_name') or ''}".strip()
+            return nm or u.get("init")
+    return None
+
+
+def assign_case(case_number, technician_id):
+    return _data(_req("PUT", f"/cases/{case_number}", json={"main_technician": int(technician_id)}))
