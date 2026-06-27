@@ -101,6 +101,7 @@ def opret_sag(args, ctx):
         customer_number=args["customer_number"],
         beskrivelse=args.get("beskrivelse", ""),
         reference=args.get("reference", ""),
+        projektnavn=args.get("projektnavn", ""),
     )
     sag = res.get("case_number")
     _note_kontakt_levering(sag, args)
@@ -109,9 +110,13 @@ def opret_sag(args, ctx):
 
 def opdater_sag(args, ctx):
     """Tilføj/ret felter på en EKSISTERENDE sag (ingen ny sag oprettes)."""
+    beskrivelse = args.get("beskrivelse")
+    if args.get("projektnavn"):
+        cur = os_api.get_case(args["sagsnummer"]) or {}
+        beskrivelse = os_api._med_projekt(beskrivelse or cur.get("description", ""), args["projektnavn"])
     os_api.update_case(
         args["sagsnummer"],
-        beskrivelse=args.get("beskrivelse"),
+        beskrivelse=beskrivelse,
         reference=args.get("reference"),
     )
     _note_kontakt_levering(args["sagsnummer"], args)
@@ -235,11 +240,11 @@ TOOLS = [
         "schema": {"type": "function", "function": {
             "name": "opret_sag",
             "description": "Opret en NY sag på en eksisterende kunde. Brug KUN når brugeren tydeligt vil have en ny sag. "
-                           "Valgfrit: reference, kontaktperson, leveringsadresse. Returnerer sagsnummer.",
+                           "Valgfrit: projektnavn, reference, kontaktperson, leveringsadresse. Returnerer sagsnummer.",
             "parameters": {"type": "object", "properties": {
                 "customer_number": {"type": "string"}, "beskrivelse": {"type": "string"},
-                "reference": {"type": "string"}, "kontaktperson": {"type": "string"},
-                "leveringsadresse": {"type": "string"}},
+                "projektnavn": {"type": "string"}, "reference": {"type": "string"},
+                "kontaktperson": {"type": "string"}, "leveringsadresse": {"type": "string"}},
                 "required": ["customer_number"]},
         }},
     },
@@ -248,11 +253,11 @@ TOOLS = [
         "schema": {"type": "function", "function": {
             "name": "opdater_sag",
             "description": "Tilføj/ret felter på en EKSISTERENDE sag (opretter ALDRIG en ny). Brug når brugeren vil "
-                           "tilføje noget til en sag der findes, fx ret beskrivelse, sæt reference, kontaktperson eller leveringsadresse.",
+                           "tilføje noget til en sag der findes, fx ret beskrivelse, sæt projektnavn, reference, kontaktperson eller leveringsadresse.",
             "parameters": {"type": "object", "properties": {
                 "sagsnummer": {"type": "string"}, "beskrivelse": {"type": "string"},
-                "reference": {"type": "string"}, "kontaktperson": {"type": "string"},
-                "leveringsadresse": {"type": "string"}},
+                "projektnavn": {"type": "string"}, "reference": {"type": "string"},
+                "kontaktperson": {"type": "string"}, "leveringsadresse": {"type": "string"}},
                 "required": ["sagsnummer"]},
         }},
     },

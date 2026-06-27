@@ -149,8 +149,16 @@ CASE_FIELD_MAP = {
 }
 
 
-def create_case(*, customer_number, beskrivelse="", reference=""):
-    body = {"customer_number": customer_number, "description": beskrivelse}
+def _med_projekt(beskrivelse, projektnavn):
+    """Projektnavn-feltet er ikke i API'et -> læg det forrest i beskrivelsen (synligt + søgbart)."""
+    beskrivelse = beskrivelse or ""
+    if projektnavn:
+        return f"{projektnavn}: {beskrivelse}".rstrip(": ").strip()
+    return beskrivelse
+
+
+def create_case(*, customer_number, beskrivelse="", reference="", projektnavn=""):
+    body = {"customer_number": customer_number, "description": _med_projekt(beskrivelse, projektnavn)}
     if reference:
         body["yourref"] = reference
     return _data(_req("POST", "/cases", json=body))
