@@ -1,5 +1,6 @@
 """FastAPI-indgang: modtager Telegram-webhooks, kører agenten, svarer."""
 import logging
+import re
 from fastapi import FastAPI, Request, HTTPException
 
 from .config import WEBHOOK_SECRET, LEADER_GROUP_CHAT_ID
@@ -78,6 +79,14 @@ async def telegram_webhook(secret: str, request: Request):
     # Menu-kommandoer (kun leder) — virker både skrevet og talt (fx "menu", "nye ordrer")
     if user["rolle"] == "pro" and menu.try_command(chat["id"], from_id, text):
         return {"ok": True}
+
+    # Svarer brugeren (Telegram-reply) på en ordre-besked? Så ved vi hvilken sag det
+    # gælder — giv agenten konteksten, så hun ikke spørger "hvilken sag?".
+    reply = msg.get("reply_to_message")
+    if reply and reply.get("text"):
+        m = re.search(r"[Ss]ag\s+(\d+)", reply["text"])
+        if m:
+            text = f"(Brugeren svarer på sag {m.group(1)} — beskeden gælder DEN sag.) {text}"
 
     ctx = {"telegram_id": from_id, "navn": user["navn"], "rolle": user["rolle"]}
     try:
