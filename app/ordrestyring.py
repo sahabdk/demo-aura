@@ -430,8 +430,22 @@ def link_kontaktperson(case_number, customer_number, navn):
         raise RuntimeError("tomt kontaktperson-navn")
     match = None
     try:
+        import difflib
         _, contacts = _debtor_med_kontakter(customer_number)
-        match = next((c for c in contacts if (c.get("name") or "").strip().lower() == navn_l), None)
+        # Fleksibel match på kundens egne kontakter: præcis -> delvis -> ~tastefejl
+        best = (0.0, None)
+        for c in contacts:
+            cn = (c.get("name") or "").strip().lower()
+            if not cn:
+                continue
+            if cn == navn_l or navn_l in cn or cn in navn_l:
+                match = c
+                break
+            r = difflib.SequenceMatcher(None, navn_l, cn).ratio()
+            if r > best[0]:
+                best = (r, c)
+        if not match and best[1] and best[0] >= 0.8:
+            match = best[1]
     except Exception:
         match = None
     cid = (match or {}).get("id")
