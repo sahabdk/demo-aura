@@ -46,7 +46,18 @@ def faktura_overview():
     rows = os_api.overdue_unpaid_invoices()
     if not rows:
         return
-    linjer = [f"- {r.get('cust_name')} – sag {r.get('case_number')} – {r.get('amount_vat')} kr" for r in rows]
+    nu = now_local().timestamp()
+    linjer = []
+    for r in rows:
+        pd = r.get("payment_date")
+        try:
+            dage = max(0, int((nu - int(pd)) / 86400)) if pd else None
+        except (ValueError, TypeError):
+            dage = None
+        rykk = db.get_reminder_count(r.get("customer_number"))
+        forsink = f", {dage} dage forsinket" if dage else ""
+        rtekst = f" · {rykk} rykker sendt" if rykk else " · ingen rykker sendt endnu"
+        linjer.append(f"- {r.get('cust_name')} – {r.get('amount_vat')} kr{forsink}{rtekst}")
     telegram.send_message(LEADER_GROUP_CHAT_ID, "🧾 Forfaldne ubetalte fakturaer:\n" + "\n".join(linjer))
 
 

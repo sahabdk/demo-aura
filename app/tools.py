@@ -219,17 +219,21 @@ def send_paamindelse_email(args, ctx):
     if not email:
         return {"resultat": "kunden har ingen email - kan ikke sende rykker"}
 
-    # Find kundens forfaldne faktura(er) -> nævn beløb og forfald i mailen
-    beloeb = forfald = None
+    # Find kundens forfaldne faktura(er) -> beløb, forfald, dage forsinket, fakturanr i mailen
+    beloeb = forfald = fakturanr = None
+    dage_forsinket = None
     try:
         mine = [r for r in os_api.overdue_unpaid_invoices()
                 if str(r.get("customer_number")) == nr]
         if mine:
             total = sum(float(r.get("amount_vat") or 0) for r in mine)
             beloeb = f"{total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            pd = mine[0].get("payment_date")
-            if pd:
-                forfald = datetime.fromtimestamp(int(pd)).strftime("%d-%m-%Y")
+            pds = [int(r.get("payment_date")) for r in mine if r.get("payment_date")]
+            if pds:
+                aeldste = min(pds)   # mest forfaldne
+                forfald = datetime.fromtimestamp(aeldste).strftime("%d-%m-%Y")
+                dage_forsinket = max(0, int((datetime.now().timestamp() - aeldste) / 86400))
+            fakturanr = ", ".join(str(r.get("invoice_number")) for r in mine if r.get("invoice_number"))
     except Exception:
         pass
 
@@ -237,7 +241,8 @@ def send_paamindelse_email(args, ctx):
     level = min(3, db.get_reminder_count(nr) + 1)
     from .email import send_payment_reminder
     try:
-        status = send_payment_reminder(email, navn, level, beloeb=beloeb, forfald=forfald)
+        status = send_payment_reminder(email, navn, level, beloeb=beloeb, forfald=forfald,
+                                       dage_forsinket=dage_forsinket, fakturanr=fakturanr or None)
     except Exception as e:
         return {"fejl": f"rykker kunne ikke sendes: {e}"}
 
@@ -253,14 +258,18 @@ def forfaldne_fakturaer(args, ctx):
     out = []
     for r in rows:
         pd = r.get("payment_date")
+        forfald, dage = "", None
         try:
-            forfald = datetime.fromtimestamp(int(pd)).strftime("%d-%m-%Y") if pd else ""
+            if pd:
+                forfald = datetime.fromtimestamp(int(pd)).strftime("%d-%m-%Y")
+                dage = max(0, int((datetime.now().timestamp() - int(pd)) / 86400))
         except (ValueError, TypeError, OSError):
             forfald = str(pd or "")
         knr = r.get("customer_number")
         out.append({"kunde": r.get("cust_name"), "kundenummer": knr,
                     "sag": r.get("case_number"), "beloeb": r.get("amount_vat"),
-                    "forfald": forfald, "antal_rykkere": db.get_reminder_count(knr)})
+                    "forfald": forfald, "dage_forsinket": dage,
+                    "antal_rykkere": db.get_reminder_count(knr)})
     return {"antal": len(out), "fakturaer": out}
 
 

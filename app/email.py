@@ -11,6 +11,8 @@ import requests
 from email.mime.text import MIMEText
 
 FIRMA = os.environ.get("FIRMA_NAVN", "Vandt og Vandt ApS")
+# Betalingsinstruktion der kommer med i hver rykker (sæt fx bankkonto/FI-nr. i Railway)
+PAYMENT_INFO = os.environ.get("PAYMENT_INFO", "")
 
 TEMPLATES = {
     1: ("Betalingspåmindelse",
@@ -26,19 +28,29 @@ TEMPLATES = {
 }
 
 
-def send_payment_reminder(to_email: str, navn: str, level: int,
-                          beloeb: str = None, forfald: str = None) -> str:
-    """Sender en eskalerende rykker. Returnerer 'sent' ved rigtig afsendelse eller
-    'dry-run' hvis SMTP ikke er konfigureret (så kalderen ved at intet blev sendt)."""
+def send_payment_reminder(to_email: str, navn: str, level: int, beloeb: str = None,
+                          forfald: str = None, dage_forsinket: int = None, fakturanr=None) -> str:
+    """Sender en eskalerende rykker med fakturadetaljer + betalingsinfo. Returnerer 'sent'/'dry-run'."""
     subject, body = TEMPLATES.get(level, TEMPLATES[1])
-    detaljer = ""
+    linjer = [f"Kære {navn},", "", body]
+
+    detaljer = []
+    if fakturanr:
+        detaljer.append(f"Faktura: {fakturanr}")
     if beloeb:
-        detaljer = f"\n\nSkyldigt beløb: {beloeb} kr."
-        if forfald:
-            detaljer += f" (forfald {forfald})"
-        detaljer += "."
-    text = f"Kære {navn},\n\n{body}{detaljer}\n\nVenlig hilsen\n{FIRMA}"
-    return _send(to_email, subject, text)
+        detaljer.append(f"Skyldigt beløb: {beloeb} kr.")
+    if forfald:
+        f = f"Forfaldsdato: {forfald}"
+        if dage_forsinket and dage_forsinket > 0:
+            f += f" ({dage_forsinket} dage forsinket)"
+        detaljer.append(f)
+    if detaljer:
+        linjer += [""] + detaljer
+
+    if PAYMENT_INFO:
+        linjer += ["", PAYMENT_INFO]
+    linjer += ["", "Venlig hilsen", FIRMA]
+    return _send(to_email, subject, "\n".join(linjer))
 
 
 def _send(to_email: str, subject: str, text: str) -> str:
