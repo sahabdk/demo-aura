@@ -70,6 +70,23 @@ def soeg_sager(args, ctx):
     ]}
 
 
+def mine_sager(args, ctx):
+    """Sager tildelt den bruger der spørger (via deres ordrestyring-id)."""
+    mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+    if not mit_id:
+        return {"resultat": "Din bruger er ikke koblet til en medarbejder i ordrestyring, "
+                            "så jeg kan ikke se hvilke sager der er tildelt dig. Bed lederen om at koble dig."}
+    mine = [c for c in os_api.cases_paged() if str(c.get("main_technician") or "") == str(mit_id)]
+    if not args.get("inkluder_lukkede"):
+        mine = [c for c in mine if not os_api.is_closed(c)]
+    mine.sort(key=lambda c: int(c.get("created_at") or 0), reverse=True)
+    return {"antal": len(mine), "sager": [
+        {"sagsnummer": c.get("case_number"),
+         "beskrivelse": (c.get("description") or "")[:120] or "(ingen beskrivelse)"}
+        for c in mine[:30]
+    ]}
+
+
 def skriv_bemaerkning(args, ctx):
     dato = datetime.now().strftime("%d-%m-%Y")
     os_api.add_remark(args["sagsnummer"], args["bemaerkning"], dato)
@@ -267,9 +284,20 @@ TOOLS = [
         "func": soeg_sager, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "soeg_sager",
-            "description": "Find en kundes sager via customer_number. Returnerer sagsnummer, beskrivelse, dato.",
+            "description": "Find en kundes sager via customer_number. Returnerer sagsnummer, beskrivelse, om sagen er åben, dato.",
             "parameters": {"type": "object", "properties": {
                 "customer_number": {"type": "string"}}, "required": ["customer_number"]},
+        }},
+    },
+    {
+        "func": mine_sager, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "mine_sager",
+            "description": "Sager der er tildelt den bruger der spørger (fx 'hvor mange sager har jeg', "
+                           "'mine sager', 'hvad ligger der til mig'). Som standard kun åbne sager. "
+                           "Returnerer antal og en liste med sagsnummer + beskrivelse.",
+            "parameters": {"type": "object", "properties": {
+                "inkluder_lukkede": {"type": "boolean"}}},
         }},
     },
     {
