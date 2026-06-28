@@ -8,6 +8,8 @@ load_dotenv()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+OPENAI_TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "tts-1")   # billig tekst-til-tale
+OPENAI_TTS_VOICE = os.environ.get("OPENAI_TTS_VOICE", "nova")    # stemme (alloy/echo/fable/onyx/nova/shimmer)
 
 ORDRESTYRING_KEY = os.environ.get("ORDRESTYRING_KEY", "")
 ORDRESTYRING_BASE = os.environ.get("ORDRESTYRING_BASE", "https://v2.api.ordrestyring.dk")

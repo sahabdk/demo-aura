@@ -83,7 +83,8 @@ async def telegram_webhook(secret: str, request: Request):
         telegram.send_message(chat["id"], "Du har ikke adgang til Aura. Kontakt din leder.")
         return {"ok": True}
 
-    # Tekst eller talebesked
+    # Tekst eller talebesked — talte beskeder besvares med tale, skrevne med tekst
+    var_tale = bool(msg.get("voice"))
     if msg.get("text"):
         text = msg["text"]
     elif msg.get("voice"):
@@ -122,7 +123,16 @@ async def telegram_webhook(secret: str, request: Request):
         svar = "Der opstod en fejl. Prøv igen om lidt."
         _notify_leader(f"Agent-fejl for {user['navn']}: {e}")
 
-    telegram.send_message(chat["id"], svar)
+    # Talte du til hende -> svar med tale; ellers tekst (sparer data ved skrift)
+    if var_tale:
+        try:
+            telegram.send_voice(chat["id"], telegram.synthesize_voice(svar))
+        except Exception as e:
+            log.exception("tts-fejl")
+            telegram.send_message(chat["id"], svar)  # fald tilbage til tekst
+            _notify_leader(f"TTS-fejl: {e}")
+    else:
+        telegram.send_message(chat["id"], svar)
     return {"ok": True}
 
 

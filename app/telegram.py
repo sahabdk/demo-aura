@@ -2,7 +2,7 @@
 import io
 import requests
 from openai import OpenAI
-from .config import TELEGRAM_TOKEN, OPENAI_API_KEY
+from .config import TELEGRAM_TOKEN, OPENAI_API_KEY, OPENAI_TTS_MODEL, OPENAI_TTS_VOICE
 
 API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 FILE_API = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}"
@@ -68,3 +68,17 @@ def transcribe_voice(file_id: str) -> str:
         prompt="Dansk talebesked om en VVS-sag. Indeholder ofte ordet 'sag' efterfulgt af et tal, samt kundenavne og adresser.",
     )
     return tr.text
+
+
+def synthesize_voice(text: str) -> bytes:
+    """Lav tale (OGG/Opus) ud fra tekst med OpenAI's billige tekst-til-tale."""
+    resp = _client.audio.speech.create(
+        model=OPENAI_TTS_MODEL, voice=OPENAI_TTS_VOICE, input=text, response_format="opus",
+    )
+    return resp.content
+
+
+def send_voice(chat_id, audio: bytes):
+    """Send et stemme-svar (voice note) til chatten."""
+    requests.post(f"{API}/sendVoice", data={"chat_id": chat_id},
+                  files={"voice": ("svar.ogg", audio, "audio/ogg")}, timeout=60)
