@@ -62,7 +62,7 @@ def soeg_sager(args, ctx):
     sager = [c for c in os_api.get_cases() if str(c.get("customer_number")) == nr]
     return {"sager": [
         {"sagsnummer": c.get("case_number"),
-         "beskrivelse": (c.get("description") or "")[:80],
+         "beskrivelse": (c.get("description") or "")[:500],
          "oprettet": c.get("created_at")}
         for c in sager
     ]}
