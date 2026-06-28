@@ -192,6 +192,25 @@ def vis_aftaler(chat_id, telegram_id):
     telegram.send_message(chat_id, "📅 Dagens aftaler:\n" + "\n".join(linjer))
 
 
+def vis_medarbejdere(chat_id):
+    """Lister ordrestyrings medarbejdere med id (til at udfylde SEED_USERS korrekt)."""
+    try:
+        brugere = os_api.users()
+    except Exception as e:
+        telegram.send_message(chat_id, f"Kunne ikke hente medarbejdere: {e}")
+        return
+    if not brugere:
+        telegram.send_message(chat_id, "Ingen medarbejdere fundet i ordrestyring.")
+        return
+    linjer = []
+    for u in brugere:
+        navn = (u.get("fullName") or f"{u.get('first_name') or ''} {u.get('last_name') or ''}".strip()
+                or u.get("init") or "?")
+        linjer.append(f"- {navn} (id: {u.get('id')})")
+    telegram.send_message(chat_id, "👷 Medarbejdere i ordrestyring:\n" + "\n".join(linjer)
+                          + "\n\nBrug id'et i SEED_USERS: telegram_id:navn:jun:ID")
+
+
 # ---------- tekst/stemme-kommandoer ----------
 
 def try_command(chat_id, telegram_id, text):
@@ -209,6 +228,9 @@ def try_command(chat_id, telegram_id, text):
     if "refer" in t and any(w in t for w in ("scan", "tjek", "find", "mangl")):
         from . import reference
         telegram.send_message(chat_id, reference.scan_and_links())
+        return True
+    if "medarbejder" in t and any(w in t for w in ("vis", "id", "liste", "list")):
+        vis_medarbejdere(chat_id)
         return True
     m = re.search(r"sag\s+(\d+)", t)
     if m and ("vis" in t or "detalj" in t):
