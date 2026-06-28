@@ -8,14 +8,14 @@ import logging
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from .config import TZ, LEADER_GROUP_CHAT_ID
+from .config import TZ, LEADER_GROUP_CHAT_ID, now_local
 from . import db, telegram, ordrestyring as os_api
 
 log = logging.getLogger("aura.scheduler")
 
 
 def morning_digest():
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = now_local().strftime("%Y-%m-%d")
     for u in db.all_users():
         rows = db.appointments_between(u["telegram_id"], today + "T00:00:00", today + "T23:59:59")
         if not rows:
@@ -29,7 +29,7 @@ def morning_digest():
 
 def soon_reminders():
     """Minder om aftaler der starter inden for ~15 min. Sender KUN én gang pr. aftale (mindet=1)."""
-    now = datetime.now()
+    now = now_local()
     soon = now + timedelta(minutes=15)
     for r in db.due_reminders(now.isoformat(timespec="seconds"), soon.isoformat(timespec="seconds")):
         besked = f"🔔 Om lidt kl. {r['start'][11:16]}: {r.get('kunde') or ''} {r.get('opgave') or ''}".rstrip()

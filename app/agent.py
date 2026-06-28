@@ -2,7 +2,7 @@
 import json
 from datetime import datetime
 from openai import OpenAI
-from .config import OPENAI_API_KEY, OPENAI_MODEL
+from .config import OPENAI_API_KEY, OPENAI_MODEL, now_local
 from . import tools, db
 
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -50,7 +50,10 @@ FAKTURA OG RYKKERE (kun leder/pro): Spørger lederen om forfaldne/ubetalte faktu
 BEMÆRKNINGER: skriv_bemaerkning med KUN selve noten (intet kundenavn/adresse/sagsnummer i teksten).
 Har en kunde flere åbne sager -> nævn dem med beskrivelse og spørg hvilken.
 
-AFTALER: husk_aftale når noget skal huskes (udregn dato ud fra Dags dato; kl. 08 hvis intet tidspunkt).
+AFTALER: husk_aftale når noget skal huskes. Beregn ALTID tidspunktet ud fra "Lige nu (dansk tid)" i
+headeren: "om 2 minutter" = lige nu + 2 min, "om en time" = +1 time, "i eftermiddag" = samme dag, "i morgen
+kl 14" = morgendagens dato kl 14. KUN hvis brugeren slet ikke nævner et tidspunkt (fx bare "i morgen")
+bruges kl. 08. Gæt aldrig på klokkeslættet — brug det rigtige nu-tidspunkt.
 se_aftaler ved spørgsmål om planer. Nævn aldrig ordet kalender/værktøj - du bare husker.
 
 ALDRIG OPFINDE: Sig kun at noget er oprettet/opdateret/sendt hvis værktøjet returnerer en bekræftelse
@@ -65,8 +68,8 @@ gamle sags-/kundenumre — slå op igen.
 
 def run_agent(ctx: dict, user_message: str, max_steps: int = 6) -> str:
     """ctx: {telegram_id, navn, rolle}. Returnerer Auras tekstsvar."""
-    today = datetime.now()
-    header = (f"Dags dato: {today:%Y-%m-%d} ({today:%A}). "
+    today = now_local()
+    header = (f"Lige nu (dansk tid): {today:%Y-%m-%d %H:%M} ({today:%A}). "
               f"Bruger: {ctx['navn']} (rolle: {ctx['rolle']}).")
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n\n" + header}]

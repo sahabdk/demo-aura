@@ -5,3 +5,4 @@ openai>=1.30
 python-dotenv>=1.0
 apscheduler>=3.10
 python-multipart>=0.0.9
+tzdata>=2024.1

@@ -1,5 +1,6 @@
 """Central konfiguration. Læser miljøvariabler fra .env."""
 import os
+from datetime import datetime
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,6 +16,16 @@ LEADER_GROUP_CHAT_ID = os.environ.get("LEADER_GROUP_CHAT_ID", "")
 DB_PATH = os.environ.get("DB_PATH", "aura.db")
 TZ = os.environ.get("TZ", "Europe/Copenhagen")
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "")
+
+
+def now_local():
+    """Nuværende tid i firmaets tidszone som NAIV datetime (wall-clock), så den matcher
+    de aftale-tidspunkter agenten gemmer. Bruges af både agent og scheduler."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo(TZ)).replace(tzinfo=None)
+    except Exception:
+        return datetime.now()
 
 # --- Referencenummer-portal ---
 # Komma-liste over de store kunders kundenumre (kun disse jagtes for manglende reference)
