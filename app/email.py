@@ -1,10 +1,13 @@
-"""Eskalerende betalingspåmindelser (1./2./3. niveau).
+"""Eskalerende betalingspåmindelser (1./2./3. niveau) + reference-mails.
 
-Brug SMTP (fx Gmail med app-password) eller skift til et udbyder-API.
-Sætter du SMTP_* miljøvariabler ind, sender den rigtigt; ellers logger den bare.
+Afsendelse (i prioriteret rækkefølge):
+  1) RESEND_API_KEY sat -> send via Resend's HTTPS-API (virker fra Railway, der blokerer SMTP).
+  2) ellers SMTP_HOST sat -> send via SMTP (kun hvis udgående SMTP er tilladt, fx Railway Pro).
+  3) ellers 'dry-run' -> log kun, send intet.
 """
 import os
 import smtplib
+import requests
 from email.mime.text import MIMEText
 
 FIRMA = os.environ.get("FIRMA_NAVN", "Vandt og Vandt ApS")
@@ -39,7 +42,10 @@ def send_payment_reminder(to_email: str, navn: str, level: int,
 
 
 def _send(to_email: str, subject: str, text: str) -> str:
-    """Sender en mail via SMTP. Returnerer 'sent' eller 'dry-run' hvis SMTP ikke er sat op."""
+    """Sender en mail. Resend-API foretrækkes (virker fra Railway); ellers SMTP; ellers dry-run."""
+    if os.environ.get("RESEND_API_KEY"):
+        return _send_resend(to_email, subject, text)
+
     host = os.environ.get("SMTP_HOST")
     if not host:
         print(f"[EMAIL/dry-run] -> {to_email} | {subject}\n{text}")
@@ -59,6 +65,21 @@ def _send(to_email: str, subject: str, text: str) -> str:
             s.starttls()
             s.login(user, pw)
             s.send_message(msg)
+    return "sent"
+
+
+def _send_resend(to_email: str, subject: str, text: str) -> str:
+    """Send via Resend's HTTPS-API (port 443 — virker fra Railway hvor SMTP er blokeret)."""
+    frm = os.environ.get("EMAIL_FROM", "onboarding@resend.dev")
+    r = requests.post(
+        "https://api.resend.com/emails",
+        headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}",
+                 "Content-Type": "application/json"},
+        json={"from": frm, "to": [to_email], "subject": subject, "text": text},
+        timeout=20,
+    )
+    if not r.ok:
+        raise RuntimeError(f"Resend {r.status_code}: {r.text[:200]}")
     return "sent"
 
 
