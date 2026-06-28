@@ -219,12 +219,16 @@ def try_command(chat_id, telegram_id, text):
     if t in ("/menu", "menu"):
         send_main_menu(chat_id)
         return True
-    if "nye ordre" in t:
-        vis_nye_ordrer(chat_id, telegram_id)
-        return True
-    if "dagens ordre" in t:
-        vis_dagens_ordrer(chat_id, telegram_id)
-        return True
+    # "Nye/dagens ordrer" — robust mod talt/naturligt sprog, men ikke når man vil OPRETTE noget
+    skab = any(w in t for w in ("opret", "lav ", "tilføj", "registrer", "ny sag på", "opgave på"))
+    emne = any(w in t for w in ("ordre", "ordrer", "sag", "sager", "opgave", "opgaver"))
+    if not skab and emne:
+        if "nye" in t or "nyt" in t or "kommet" in t:   # fx "er der kommet nye ordrer?"
+            vis_nye_ordrer(chat_id, telegram_id)
+            return True
+        if "dagens" in t or "i dag" in t:               # fx "vis dagens ordrer"
+            vis_dagens_ordrer(chat_id, telegram_id)
+            return True
     if "refer" in t and any(w in t for w in ("scan", "tjek", "find", "mangl")):
         from . import reference
         telegram.send_message(chat_id, reference.scan_and_links())
