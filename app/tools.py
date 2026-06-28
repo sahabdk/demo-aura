@@ -19,21 +19,26 @@ def fuzzy_find_customers(query, limit=8):
     q = _norm(query)
     if not q:
         return []
+    tokens = [t for t in q.split() if len(t) >= 2]
     scored = []
     for d in os_api.all_debtors():
         name = _norm(d.get("customer_name"))
         addr = _norm(d.get("customer_address"))
         city = _norm(d.get("customer_city"))
+        hay = f"{name} {addr} {city}"
         if q in name or q in addr or q in city:
             score = 1.0
+        elif tokens and all(t in hay for t in tokens):
+            score = 0.9          # alle søgeord findes (fx fornavn + by)
         else:
-            score = max(
-                difflib.SequenceMatcher(None, q, name).ratio(),
-                difflib.SequenceMatcher(None, q, f"{name} {addr}").ratio(),
-            )
+            # Sammenlign både hele teksten og hvert ord med navnet (bedste match tæller)
+            ratios = [difflib.SequenceMatcher(None, q, name).ratio()]
+            ratios += [difflib.SequenceMatcher(None, t, name).ratio() for t in tokens]
+            score = max(ratios)
         scored.append((score, d))
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [d for s, d in scored if s >= 0.5][:limit]
+    # 0.72-tærskel: ægte tastefejl (fx 'kristian'~'christian') fanges, men ikke-relaterede navne ryger fra
+    return [d for s, d in scored if s >= 0.72][:limit]
 
 
 # ---------- værktøjs-implementeringer ----------
