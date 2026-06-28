@@ -127,7 +127,16 @@ def opret_sag(args, ctx):
         projektnavn=args.get("projektnavn", ""),
     )
     sag = res.get("case_number")
-    ekstra = _set_kontakt_levering(sag, args.get("customer_number"), args)
+    # Sæt den der oprettede som ansvarlig — kun hvis de har et ordrestyring-id
+    ekstra = {}
+    mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+    if sag and mit_id:
+        try:
+            os_api.assign_case(sag, mit_id)
+            ekstra["ansvarlig"] = ctx.get("navn")
+        except Exception:
+            pass
+    ekstra.update(_set_kontakt_levering(sag, args.get("customer_number"), args))
     return {"resultat": "sag oprettet", "sagsnummer": sag, **ekstra}
 
 
