@@ -237,8 +237,11 @@ def send_paamindelse_email(args, ctx):
     except Exception:
         pass
 
-    # Beregn næste niveau UDEN at gemme endnu (tæl kun op hvis mailen faktisk sendes)
-    level = min(3, db.get_reminder_count(nr) + 1)
+    # Niveau: lederen kan bede om et bestemt (1/2/3); ellers vælger systemet næste automatisk.
+    if args.get("niveau"):
+        level = max(1, min(3, int(args["niveau"])))
+    else:
+        level = min(3, db.get_reminder_count(nr) + 1)
     from .email import send_payment_reminder
     try:
         status = send_payment_reminder(email, navn, level, beloeb=beloeb, forfald=forfald,
@@ -402,10 +405,13 @@ TOOLS = [
         "func": send_paamindelse_email, "roles": {"pro"},   # KUN leder
         "schema": {"type": "function", "function": {
             "name": "send_paamindelse_email",
-            "description": "Send en eskalerende betalingspåmindelse til en kunde (systemet vælger 1./2./3. niveau). "
-                           "Brug kun efter bekræftelse.",
+            "description": "Send en betalingspåmindelse (rykker) til en kunde. Angiv 'niveau' (1, 2 eller 3) "
+                           "hvis lederen beder om et bestemt niveau ('1. rykker', 'sidste rykker'=3). "
+                           "Uden niveau vælger systemet automatisk næste. En rykker hører til KUNDEN, ikke en sag.",
             "parameters": {"type": "object", "properties": {
-                "kundenummer": {"type": "string"}}, "required": ["kundenummer"]},
+                "kundenummer": {"type": "string"},
+                "niveau": {"type": "integer", "description": "1, 2 eller 3 — valgfrit"}},
+                "required": ["kundenummer"]},
         }},
     },
     {
