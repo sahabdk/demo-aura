@@ -1,5 +1,6 @@
-"""Telegram-hjælpere: send besked, hent + transskribér talebesked (Whisper)."""
+"""Telegram-hjælpere: send besked, hent + transskribér talebesked (Whisper), tale (TTS)."""
 import io
+import re
 import requests
 from openai import OpenAI
 from .config import TELEGRAM_TOKEN, OPENAI_API_KEY, OPENAI_TTS_MODEL, OPENAI_TTS_VOICE
@@ -70,10 +71,65 @@ def transcribe_voice(file_id: str) -> str:
     return tr.text
 
 
+# ---- Dansk tal-til-ord (KUN til tale, så cifre ikke læses robotagtigt) ----
+_ENER = ["nul", "en", "to", "tre", "fire", "fem", "seks", "syv", "otte", "ni", "ti", "elleve",
+         "tolv", "tretten", "fjorten", "femten", "seksten", "sytten", "atten", "nitten"]
+_TIERE = {20: "tyve", 30: "tredive", 40: "fyrre", 50: "halvtreds", 60: "tres",
+          70: "halvfjerds", 80: "firs", 90: "halvfems"}
+
+
+def _u100(n):
+    if n < 20:
+        return _ENER[n]
+    t, e = (n // 10) * 10, n % 10
+    return _TIERE[t] if e == 0 else _ENER[e] + "og" + _TIERE[t]
+
+
+def _u1000(n):
+    if n < 100:
+        return _u100(n)
+    h, r = n // 100, n % 100
+    s = ("et" if h == 1 else _ENER[h]) + "hundrede"
+    return s if r == 0 else s + "og" + _u100(r)
+
+
+def _tal_til_ord(n):
+    if n < 1000:
+        return _u1000(n)
+    if n < 1000000:
+        t, r = n // 1000, n % 1000
+        s = ("et" if t == 1 else _u1000(t)) + "tusind"
+        return s if r == 0 else s + (" og " if r < 100 else " ") + _u1000(r)
+    return " ".join(_ENER[int(c)] for c in str(n))   # store tal (fx telefon) ciffer for ciffer
+
+
+def _til_tale(text: str) -> str:
+    """Gør tekst klar til oplæsning: cifre -> ord, forkortelser udskrevet."""
+    t = re.sub(r"\bkr\.?\b", "kroner", text, flags=re.I)
+    t = re.sub(r"\bstk\.?\b", "styk", t, flags=re.I)
+    t = re.sub(r"\bca\.?\b", "cirka", t, flags=re.I)
+    t = re.sub(r"\btlf\.?\b", "telefon", t, flags=re.I)
+    t = t.replace("%", " procent")
+
+    def _repl(m):
+        num = m.group(0)
+        if "," in num or "." in num:
+            sep = "," if "," in num else "."
+            a, b = num.split(sep, 1)
+            heltal = _tal_til_ord(int(a)) if a.isdigit() else a
+            brok = " ".join(_ENER[int(c)] for c in b if c.isdigit())
+            return f" {heltal} komma {brok} "
+        return f" {_tal_til_ord(int(num))} "
+
+    t = re.sub(r"\d+(?:[.,]\d+)?", _repl, t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
 def synthesize_voice(text: str) -> bytes:
-    """Lav tale (OGG/Opus) ud fra tekst med OpenAI's billige tekst-til-tale."""
+    """Lav tale (OGG/Opus) ud fra tekst med OpenAI's billige tekst-til-tale.
+    Tal og forkortelser laves om til ord, så det lyder naturligt på dansk."""
     resp = _client.audio.speech.create(
-        model=OPENAI_TTS_MODEL, voice=OPENAI_TTS_VOICE, input=text, response_format="opus",
+        model=OPENAI_TTS_MODEL, voice=OPENAI_TTS_VOICE, input=_til_tale(text), response_format="opus",
     )
     return resp.content
 
