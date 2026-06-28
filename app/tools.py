@@ -87,7 +87,24 @@ def mine_sager(args, ctx):
     ]}
 
 
+def _ejer_eller_afvis(sagsnummer, ctx):
+    """Returnerer en afvisnings-dict hvis en jun rører en sag der IKKE er tildelt dem.
+    Lederen (pro) må alt -> None. Bruges af kommentar/redigér/færdigmeld."""
+    if ctx.get("rolle") == "pro":
+        return None
+    case = os_api.get_case(sagsnummer) or {}
+    mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+    tildelt = str(case.get("main_technician") or "")
+    if not mit_id or str(mit_id) != tildelt:
+        return {"resultat": "Du kan kun kommentere og redigere dine egne opgaver — altså dem der er "
+                            "tildelt dig. Bed lederen, hvis en anden sag skal ændres."}
+    return None
+
+
 def skriv_bemaerkning(args, ctx):
+    afvist = _ejer_eller_afvis(args["sagsnummer"], ctx)
+    if afvist:
+        return afvist
     dato = datetime.now().strftime("%d-%m-%Y")
     os_api.add_remark(args["sagsnummer"], args["bemaerkning"], dato)
     return {"resultat": f"Bemærkning lagt på sag {args['sagsnummer']}"}
@@ -166,6 +183,9 @@ def opret_sag(args, ctx):
 
 def opdater_sag(args, ctx):
     """Tilføj/ret felter på en EKSISTERENDE sag (ingen ny sag oprettes)."""
+    afvist = _ejer_eller_afvis(args["sagsnummer"], ctx)
+    if afvist:
+        return afvist
     beskrivelse = args.get("beskrivelse")
     if args.get("projektnavn"):
         cur = os_api.get_case(args["sagsnummer"]) or {}
@@ -181,13 +201,9 @@ def opdater_sag(args, ctx):
 
 def afslut_sag(args, ctx):
     # Medarbejdere (jun) må kun færdigmelde sager der er tildelt DEM
-    if ctx["rolle"] != "pro":
-        case = os_api.get_case(args["sagsnummer"]) or {}
-        mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
-        tildelt = str(case.get("main_technician") or "")
-        if not mit_id or str(mit_id) != tildelt:
-            return {"resultat": "Du kan kun færdigmelde dine egne opgaver — altså dem der er tildelt dig. "
-                                "Bed lederen, hvis en anden sag skal lukkes."}
+    if _ejer_eller_afvis(args["sagsnummer"], ctx):
+        return {"resultat": "Du kan kun færdigmelde dine egne opgaver — altså dem der er tildelt dig. "
+                            "Bed lederen, hvis en anden sag skal lukkes."}
     info = os_api.close_case(args["sagsnummer"], work_done=args.get("kommentar", ""))
     if info.get("status_id"):
         return {"resultat": f"Sag {args['sagsnummer']} er færdigmeldt og lukket (status sat til afsluttet)."}
