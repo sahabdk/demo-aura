@@ -28,17 +28,16 @@ def morning_digest():
 
 
 def soon_reminders():
+    """Minder om aftaler der starter inden for ~15 min. Sender KUN én gang pr. aftale (mindet=1)."""
     now = datetime.now()
     soon = now + timedelta(minutes=15)
-    for u in db.all_users():
-        rows = db.appointments_between(u["telegram_id"], now.isoformat(timespec="seconds"),
-                                       soon.isoformat(timespec="seconds"))
-        for r in rows:
-            try:
-                telegram.send_message(u["telegram_id"],
-                                      f"🔔 Om lidt kl. {r['start'][11:16]}: {r['kunde'] or ''} {r['opgave'] or ''}".rstrip())
-            except Exception:
-                log.exception("kunne ikke sende påmindelse")
+    for r in db.due_reminders(now.isoformat(timespec="seconds"), soon.isoformat(timespec="seconds")):
+        besked = f"🔔 Om lidt kl. {r['start'][11:16]}: {r.get('kunde') or ''} {r.get('opgave') or ''}".rstrip()
+        try:
+            telegram.send_message(r["telegram_id"], besked)
+            db.mark_reminded(r["id"])
+        except Exception:
+            log.exception("kunne ikke sende påmindelse")
 
 
 def faktura_overview():
@@ -63,7 +62,7 @@ def reference_scan():
 def start_scheduler():
     sch = BackgroundScheduler(timezone=TZ)
     sch.add_job(morning_digest, "cron", hour=7, minute=0)
-    sch.add_job(soon_reminders, "cron", day_of_week="mon-fri", hour="6-18", minute="*/15")
+    sch.add_job(soon_reminders, "cron", minute="*/5")   # hele døgnet, alle dage
     sch.add_job(faktura_overview, "cron", day_of_week="mon", hour=8, minute=0)
     sch.add_job(reference_scan, "cron", day_of_week="mon-fri", hour="7-18", minute=0)  # hver hele time i arbejdstiden
     sch.start()

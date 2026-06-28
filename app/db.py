@@ -177,6 +177,21 @@ def appointments_between(telegram_id, fra_iso, til_iso):
         return [dict(r) for r in rows]
 
 
+def due_reminders(fra_iso, til_iso):
+    """Aftaler (alle brugere) der starter i [fra, til] og IKKE er mindet om endnu."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT * FROM aftaler WHERE mindet=0 AND start>=? AND start<=? ORDER BY start",
+            (fra_iso, til_iso),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def mark_reminded(aftale_id):
+    with conn() as c:
+        c.execute("UPDATE aftaler SET mindet=1 WHERE id=?", (aftale_id,))
+
+
 # ---- Kort samtale-hukommelse (til opklarende dialog) ----
 
 def recent_messages(telegram_id, limit=10):
