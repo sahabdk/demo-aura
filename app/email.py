@@ -44,14 +44,21 @@ def _send(to_email: str, subject: str, text: str) -> str:
     if not host:
         print(f"[EMAIL/dry-run] -> {to_email} | {subject}\n{text}")
         return "dry-run"
+    port = int(os.environ.get("SMTP_PORT", 587))
+    user, pw = os.environ["SMTP_USER"], os.environ["SMTP_PASS"]
     msg = MIMEText(text)
     msg["Subject"] = subject
-    msg["From"] = os.environ.get("SMTP_FROM", os.environ.get("SMTP_USER", ""))
+    msg["From"] = os.environ.get("SMTP_FROM", user)
     msg["To"] = to_email
-    with smtplib.SMTP(host, int(os.environ.get("SMTP_PORT", 587))) as s:
-        s.starttls()
-        s.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
-        s.send_message(msg)
+    if port == 465:   # implicit SSL
+        with smtplib.SMTP_SSL(host, port, timeout=20) as s:
+            s.login(user, pw)
+            s.send_message(msg)
+    else:             # STARTTLS (fx 587)
+        with smtplib.SMTP(host, port, timeout=20) as s:
+            s.starttls()
+            s.login(user, pw)
+            s.send_message(msg)
     return "sent"
 
 
