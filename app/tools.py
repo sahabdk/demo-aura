@@ -57,12 +57,14 @@ def soeg_kunde(args, ctx):
 
 
 def soeg_sager(args, ctx):
-    # ordrestyring kan ikke filtrere /cases på customer_number -> filtrér klient-side
+    # ordrestyring kan ikke filtrere /cases på customer_number -> hent (pagineret) og filtrér klient-side
     nr = str(args["customer_number"])
-    sager = [c for c in os_api.get_cases() if str(c.get("customer_number")) == nr]
+    sager = [c for c in os_api.cases_paged() if str(c.get("customer_number")) == nr]
+    sager.sort(key=lambda c: int(c.get("created_at") or 0), reverse=True)
     return {"sager": [
         {"sagsnummer": c.get("case_number"),
-         "beskrivelse": (c.get("description") or "")[:500],
+         "beskrivelse": (c.get("description") or "")[:500] or "(ingen beskrivelse)",
+         "aaben": not os_api.is_closed(c),
          "oprettet": c.get("created_at")}
         for c in sager
     ]}

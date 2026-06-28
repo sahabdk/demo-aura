@@ -249,6 +249,23 @@ def recent_cases(days=14, maks_sider=30):
     return rows
 
 
+def cases_paged(maks_sider=5):
+    """Seneste sager (pagineret, nyeste først) — bruges til at finde en kundes sager,
+    da /cases ikke kan filtreres på customer_number."""
+    rows, page = [], 1
+    while page <= maks_sider:
+        batch = _data(_req("GET", "/cases", params={
+            "sortby": "-created_at", "page": page, "pagesize": 100,
+        })) or []
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    return rows
+
+
 def has_reference(case):
     return bool((case.get("yourref") or "").strip())
 
