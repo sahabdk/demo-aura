@@ -81,11 +81,22 @@ def get_user(telegram_id: str):
 def upsert_user(telegram_id, navn, rolle="jun", os_user_id=None):
     with conn() as c:
         c.execute(
-            "INSERT INTO brugere(telegram_id, navn, rolle, os_user_id) VALUES(?,?,?,?) "
+            "INSERT INTO brugere(telegram_id, navn, rolle, os_user_id, aktiv) VALUES(?,?,?,?,1) "
             "ON CONFLICT(telegram_id) DO UPDATE SET navn=excluded.navn, rolle=excluded.rolle, "
-            "os_user_id=COALESCE(excluded.os_user_id, brugere.os_user_id)",
+            "os_user_id=COALESCE(excluded.os_user_id, brugere.os_user_id), aktiv=1",
             (str(telegram_id), navn, rolle, str(os_user_id) if os_user_id else None),
         )
+
+
+def deactivate_users_not_in(keep_ids):
+    """Fjern adgang (aktiv=0) for alle brugere der IKKE står på listen. Gør SEED_USERS
+    til den fulde sandhed, så man kan fjerne adgang ved at fjerne nogen fra listen."""
+    keep = [str(i) for i in keep_ids]
+    if not keep:
+        return
+    placeholders = ",".join("?" for _ in keep)
+    with conn() as c:
+        c.execute(f"UPDATE brugere SET aktiv=0 WHERE telegram_id NOT IN ({placeholders})", keep)
 
 
 def all_users():
@@ -101,6 +112,7 @@ def seed_users_from_env():
     """
     import os
     raw = os.environ.get("SEED_USERS", "")
+    keep = set()
     for part in raw.split(","):
         part = part.strip()
         if not part:
@@ -111,6 +123,9 @@ def seed_users_from_env():
             rolle = bits[2] if len(bits) > 2 else "jun"
             os_user_id = bits[3] if len(bits) > 3 and bits[3] else None
             upsert_user(tid, navn, rolle, os_user_id)
+            keep.add(str(tid))
+    # SEED_USERS er den fulde sandhed: alle andre mister adgang (kun hvis listen ikke er tom)
+    deactivate_users_not_in(keep)
 
 
 # ---- Rykker-tæller (eskalering 1->2->3) ----
