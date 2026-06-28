@@ -41,24 +41,15 @@ def soon_reminders():
 
 
 def faktura_overview():
+    """Mandags-oversigt: kun hvis der er forfaldne fakturaer (ellers tavst).
+    Viser kort med detaljer + 'Send rykker'-knap pr. faktura (samme som menuen)."""
     if not LEADER_GROUP_CHAT_ID:
         return
-    rows = os_api.overdue_unpaid_invoices()
-    if not rows:
+    if not os_api.overdue_unpaid_invoices():
         return
-    nu = now_local().timestamp()
-    linjer = []
-    for r in rows:
-        pd = r.get("payment_date")
-        try:
-            dage = max(0, int((nu - int(pd)) / 86400)) if pd else None
-        except (ValueError, TypeError):
-            dage = None
-        rykk = db.get_reminder_count(r.get("customer_number"))
-        forsink = f", {dage} dage forsinket" if dage else ""
-        rtekst = f" · {rykk} rykker sendt" if rykk else " · ingen rykker sendt endnu"
-        linjer.append(f"- {r.get('cust_name')} – {r.get('amount_vat')} kr{forsink}{rtekst}")
-    telegram.send_message(LEADER_GROUP_CHAT_ID, "🧾 Forfaldne ubetalte fakturaer:\n" + "\n".join(linjer))
+    from . import menu
+    telegram.send_message(LEADER_GROUP_CHAT_ID, "God morgen! Her er ugens forfaldne fakturaer:")
+    menu.vis_forfaldne(LEADER_GROUP_CHAT_ID)
 
 
 def reference_scan():

@@ -176,9 +176,26 @@ def vis_forfaldne(chat_id):
     if not fakturaer:
         telegram.send_message(chat_id, "Ingen forfaldne ubetalte fakturaer. 👍")
         return
-    linjer = [f"- {f['kunde']} – {f['beloeb']} kr – forfald {f['forfald']} ({f['antal_rykkere']} rykker)"
-              for f in fakturaer]
-    telegram.send_message(chat_id, "🧾 Forfaldne fakturaer:\n" + "\n".join(linjer))
+    telegram.send_message(chat_id, f"🧾 Forfaldne ubetalte fakturaer: {len(fakturaer)}")
+    for f in fakturaer[:25]:
+        dage = f.get("dage_forsinket")
+        forsink = f" · {dage} dage forsinket" if dage else ""
+        rykk = f.get("antal_rykkere") or 0
+        rtekst = f" · {rykk} rykker sendt" if rykk else " · ingen rykker sendt"
+        tekst = f"{f['kunde']} · {f['beloeb']} kr · forfald {f['forfald']}{forsink}{rtekst}"
+        telegram.send_buttons(chat_id, tekst, [[("💌 Send rykker", f"rykker:{f['kundenummer']}")]])
+    if len(fakturaer) > 25:
+        telegram.send_message(chat_id, f"… og {len(fakturaer) - 25} flere.")
+
+
+def send_rykker_knap(chat_id, message_id, kundenummer, from_id):
+    """Sender næste rykker til kunden når lederen trykker på knappen."""
+    from .tools import send_paamindelse_email
+    bruger = db.get_user(from_id) or {}
+    ctx = {"telegram_id": from_id, "navn": bruger.get("navn", ""), "rolle": "pro"}
+    res = send_paamindelse_email({"kundenummer": kundenummer}, ctx)
+    svar = res.get("resultat") or res.get("fejl") or "Færdig."
+    telegram.edit_message(chat_id, message_id, f"💌 {svar}", [])   # fjern knappen så man ikke dobbelt-sender
 
 
 def vis_aftaler(chat_id, telegram_id):
@@ -236,6 +253,9 @@ def try_command(chat_id, telegram_id, text):
     if "medarbejder" in t and any(w in t for w in ("vis", "id", "liste", "list")):
         vis_medarbejdere(chat_id)
         return True
+    if "send" not in t and "forfald" in t and any(w in t for w in ("faktura", "regning", "ubetalt")):
+        vis_forfaldne(chat_id)
+        return True
     m = re.search(r"sag\s+(\d+)", t)
     if m and ("vis" in t or "detalj" in t):
         nr = m.group(1)
@@ -280,3 +300,5 @@ def handle_callback(cq):
     elif data.startswith("sat:"):
         _, case_number, tech_id = data.split(":")
         saet_ansvarlig(chat_id, message_id, case_number, tech_id)
+    elif data.startswith("rykker:"):
+        send_rykker_knap(chat_id, message_id, data.split(":", 1)[1], from_id)
