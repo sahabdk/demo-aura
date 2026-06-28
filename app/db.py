@@ -23,6 +23,7 @@ def init_db():
                 telegram_id TEXT PRIMARY KEY,
                 navn        TEXT NOT NULL,
                 rolle       TEXT NOT NULL DEFAULT 'jun',   -- 'pro' (leder) | 'jun' (medarbejder)
+                os_user_id  TEXT,                          -- medarbejderens ordrestyring-id (til 'egne sager')
                 aktiv       INTEGER NOT NULL DEFAULT 1
             );
             CREATE TABLE IF NOT EXISTS rykkere (
@@ -60,6 +61,11 @@ def init_db():
             );
             """
         )
+        # Migration: tilføj os_user_id til eksisterende databaser (ignoreres hvis den findes)
+        try:
+            c.execute("ALTER TABLE brugere ADD COLUMN os_user_id TEXT")
+        except sqlite3.OperationalError:
+            pass
 
 
 # ---- Brugere / roller ----
@@ -72,12 +78,13 @@ def get_user(telegram_id: str):
         return dict(row) if row else None
 
 
-def upsert_user(telegram_id, navn, rolle="jun"):
+def upsert_user(telegram_id, navn, rolle="jun", os_user_id=None):
     with conn() as c:
         c.execute(
-            "INSERT INTO brugere(telegram_id, navn, rolle) VALUES(?,?,?) "
-            "ON CONFLICT(telegram_id) DO UPDATE SET navn=excluded.navn, rolle=excluded.rolle",
-            (str(telegram_id), navn, rolle),
+            "INSERT INTO brugere(telegram_id, navn, rolle, os_user_id) VALUES(?,?,?,?) "
+            "ON CONFLICT(telegram_id) DO UPDATE SET navn=excluded.navn, rolle=excluded.rolle, "
+            "os_user_id=COALESCE(excluded.os_user_id, brugere.os_user_id)",
+            (str(telegram_id), navn, rolle, str(os_user_id) if os_user_id else None),
         )
 
 
@@ -88,8 +95,9 @@ def all_users():
 
 def seed_users_from_env():
     """Opretter brugere fra miljøvariablen SEED_USERS.
-    Format: 'telegram_id:navn:rolle,telegram_id:navn:rolle' (rolle = pro|jun).
-    Fx: 7713099063:Dan:pro,6779276258:Sahab:jun
+    Format: 'telegram_id:navn:rolle:os_user_id, ...' (rolle = pro|jun, os_user_id valgfrit).
+    os_user_id er medarbejderens ordrestyring-id (bruges til 'kun egne sager').
+    Fx: 7713099063:Dan:pro,6779276258:Sahab:jun:118
     """
     import os
     raw = os.environ.get("SEED_USERS", "")
@@ -101,7 +109,8 @@ def seed_users_from_env():
         if len(bits) >= 2:
             tid, navn = bits[0], bits[1]
             rolle = bits[2] if len(bits) > 2 else "jun"
-            upsert_user(tid, navn, rolle)
+            os_user_id = bits[3] if len(bits) > 3 and bits[3] else None
+            upsert_user(tid, navn, rolle, os_user_id)
 
 
 # ---- Rykker-tæller (eskalering 1->2->3) ----

@@ -147,6 +147,14 @@ def opdater_sag(args, ctx):
 
 
 def afslut_sag(args, ctx):
+    # Medarbejdere (jun) må kun færdigmelde sager der er tildelt DEM
+    if ctx["rolle"] != "pro":
+        case = os_api.get_case(args["sagsnummer"]) or {}
+        mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+        tildelt = str(case.get("main_technician") or "")
+        if not mit_id or str(mit_id) != tildelt:
+            return {"resultat": "Du kan kun færdigmelde dine egne opgaver — altså dem der er tildelt dig. "
+                                "Bed lederen, hvis en anden sag skal lukkes."}
     info = os_api.close_case(args["sagsnummer"], work_done=args.get("kommentar", ""))
     if info.get("status_id"):
         return {"resultat": f"Sag {args['sagsnummer']} er færdigmeldt og lukket (status sat til afsluttet)."}
