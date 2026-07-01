@@ -1,6 +1,7 @@
 """SQLite: brugere/roller, rykker-tællere og aftaler (erstatter Make Data store + kalender)."""
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime
 from .config import DB_PATH
 
 
@@ -162,6 +163,20 @@ def set_reminder_count(kundenummer: str, antal: int):
 
 def add_appointment(telegram_id, kunde, opgave, start_iso):
     with conn() as c:
+        # Undgå dublet: samme bruger + samme opgave inden for 3 min af hinanden
+        try:
+            ny = datetime.fromisoformat(start_iso)
+            for row in c.execute(
+                "SELECT start FROM aftaler WHERE telegram_id=? AND IFNULL(opgave,'')=IFNULL(?,'')",
+                (str(telegram_id), opgave),
+            ).fetchall():
+                try:
+                    if abs((datetime.fromisoformat(row["start"]) - ny).total_seconds()) <= 180:
+                        return   # dublet -> opret ikke igen
+                except (ValueError, TypeError):
+                    pass
+        except (ValueError, TypeError):
+            pass
         c.execute(
             "INSERT INTO aftaler(telegram_id, kunde, opgave, start) VALUES(?,?,?,?)",
             (str(telegram_id), kunde, opgave, start_iso),

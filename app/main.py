@@ -41,12 +41,29 @@ async def ref_post(token: str, request: Request):
     return reference.submit_reference(token, form.get("reference", ""))
 
 
+_seen_updates = []   # de seneste update_id'er vi har behandlet (mod Telegram-genforsøg -> dubletter)
+
+
+def _already_handled(update_id):
+    """True hvis vi allerede har behandlet denne besked (Telegram sender igen ved timeout)."""
+    if update_id is None:
+        return False
+    if update_id in _seen_updates:
+        return True
+    _seen_updates.append(update_id)
+    if len(_seen_updates) > 500:
+        del _seen_updates[:250]
+    return False
+
+
 @app.post("/telegram/{secret}")
 async def telegram_webhook(secret: str, request: Request):
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
         raise HTTPException(403, "forkert webhook-token")
 
     update = await request.json()
+    if _already_handled(update.get("update_id")):
+        return {"ok": True}   # samme besked igen -> ignorér (undgå dobbelt-behandling)
 
     # Knap-tryk (callback_query) — kun for leder
     cq = update.get("callback_query")
