@@ -18,9 +18,15 @@ def morning_digest():
     today = now_local().strftime("%Y-%m-%d")
     for u in db.all_users():
         rows = db.appointments_between(u["telegram_id"], today + "T00:00:00", today + "T23:59:59")
-        if not rows:
+        linjer = []
+        for r in rows:
+            tid = (r.get("start") or "")[11:16]
+            tekst = f"{r.get('kunde') or ''} {r.get('opgave') or ''}".strip()
+            if not tekst:
+                continue   # aftale uden indhold (opgave/kunde) -> spring over
+            linjer.append((f"- kl. {tid} {tekst}".rstrip() if tid else f"- {tekst}"))
+        if not linjer:      # ingen RIGTIGE aftaler -> ingen besked
             continue
-        linjer = [f"- kl. {r['start'][11:16]} {r['kunde'] or ''} {r['opgave'] or ''}".rstrip() for r in rows]
         try:
             telegram.send_message(u["telegram_id"], "🔔 Dine aftaler i dag:\n" + "\n".join(linjer))
         except Exception:
