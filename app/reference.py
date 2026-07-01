@@ -147,6 +147,13 @@ def portal_page(token: str) -> str:
                      f"<b>{html.escape(rec.get('reference') or '')}</b> for denne opgave.</p>")
 
     case = os_api.get_case(rec["case_number"]) or {}
+    # Er referencen imellemtiden kommet ind ad anden vej (telefon, direkte i ordrestyring)?
+    if os_api.has_reference(case):
+        ref = (case.get("yourref") or "").strip()
+        db.mark_ref_done_by_case(rec["case_number"], ref)
+        return _page(f"<h1 class='ok'>Tak!</h1><p>Vi har allerede modtaget referencenummeret "
+                     f"<b>{html.escape(ref)}</b> for denne opgave — du behøver ikke gøre mere.</p>")
+
     debtor = os_api.get_debtor(rec["customer_number"]) or {}
     adresse = (f"{debtor.get('customer_address','')} {debtor.get('customer_postalcode','')} "
                f"{debtor.get('customer_city','')}").strip()
@@ -191,6 +198,14 @@ def submit_reference(token: str, reference: str) -> str:
                      "<input type='text' id='reference' name='reference' required>"
                      "<div class='fejl'>Feltet må ikke være tomt.</div>"
                      "<button type='submit'>Send referencenummer</button></form>")
+
+    # Kom referencen ind ad anden vej mens formularen var åben? Så overskriv ikke.
+    case = os_api.get_case(rec["case_number"]) or {}
+    if os_api.has_reference(case):
+        ref = (case.get("yourref") or "").strip()
+        db.mark_ref_done_by_case(rec["case_number"], ref)
+        return _page(f"<h1 class='ok'>Tak!</h1><p>Vi har allerede modtaget referencenummeret "
+                     f"<b>{html.escape(ref)}</b> for denne opgave — du behøver ikke gøre mere.</p>")
 
     # Skriv referencen tilbage på sagen (yourref)
     try:
