@@ -13,6 +13,9 @@ OPENAI_TTS_VOICE = os.environ.get("OPENAI_TTS_VOICE", "nova")    # stemme (alloy
 
 ORDRESTYRING_KEY = os.environ.get("ORDRESTYRING_KEY", "")
 ORDRESTYRING_BASE = os.environ.get("ORDRESTYRING_BASE", "https://v2.api.ordrestyring.dk")
+# GraphQL-API (varesøgning + tilføj materiale). Bruger samme nøgle som v2 medmindre andet sættes.
+OS_GRAPHQL_URL = os.environ.get("OS_GRAPHQL_URL", "https://graphql.ordrestyring.dk/graphql")
+OS_GRAPHQL_KEY = os.environ.get("OS_GRAPHQL_KEY", ORDRESTYRING_KEY)
 
 LEADER_GROUP_CHAT_ID = os.environ.get("LEADER_GROUP_CHAT_ID", "")
 DB_PATH = os.environ.get("DB_PATH", "aura.db")

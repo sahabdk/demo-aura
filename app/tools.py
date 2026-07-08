@@ -6,6 +6,7 @@ Funktionerne kaldes med (args: dict, ctx: dict) hvor ctx har 'telegram_id', 'nav
 import difflib
 from datetime import datetime, timedelta
 from . import ordrestyring as os_api
+from . import os_graphql as os_gql
 from . import db
 
 
@@ -294,6 +295,55 @@ def se_aftaler(args, ctx):
     return {"aftaler": [{"start": r["start"], "kunde": r["kunde"], "opgave": r["opgave"]} for r in rows]}
 
 
+def _pris(p):
+    """Vis listepris pænt hvis muligt."""
+    v = p.get("listPrice")
+    if v in (None, ""):
+        return None
+    try:
+        return f"{float(v):.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " kr"
+    except (ValueError, TypeError):
+        return str(v)
+
+
+def soeg_vare(args, ctx):
+    """Søg i vare-kataloget. Returnerer op til 5 forslag + hvor mange flere der er."""
+    term = (args.get("soegetekst") or "").strip()
+    if not term:
+        return {"resultat": "skriv hvad varen hedder"}
+    try:
+        varer, flere = os_gql.search_products(term, limit=5)
+    except Exception as e:
+        return {"fejl": f"varesøgning fejlede: {e}"}
+    if not varer:
+        return {"resultat": f"ingen varer fundet for '{term}'", "varer": []}
+    return {"varer": [
+        {"vare_id": p.get("id"), "varenummer": p.get("number"),
+         "beskrivelse": p.get("description"), "pris": _pris(p)}
+        for p in varer
+    ], "flere": flere}
+
+
+def tilfoej_vare(args, ctx):
+    """Læg en vare på en sag (kræver sagsnummer + vare_id fra soeg_vare)."""
+    afvist = _ejer_eller_afvis(args["sagsnummer"], ctx)
+    if afvist:
+        return afvist
+    try:
+        os_gql.add_case_material(
+            args["sagsnummer"],
+            identifier=args.get("vare_id"),
+            quantity=args.get("antal", 1),
+            product_number=args.get("varenummer"),
+            description=args.get("beskrivelse"),
+        )
+    except Exception as e:
+        return {"fejl": f"kunne ikke lægge varen på sagen: {e}"}
+    antal = args.get("antal", 1)
+    navn = args.get("beskrivelse") or args.get("varenummer") or "varen"
+    return {"resultat": f"Lagt på sag {args['sagsnummer']}: {navn} × {antal}"}
+
+
 # ---------- registry: skema + funktion + tilladte roller ----------
 
 TOOLS = [
@@ -315,6 +365,30 @@ TOOLS = [
             "description": "Find en kundes sager via customer_number. Returnerer sagsnummer, beskrivelse, om sagen er åben, dato.",
             "parameters": {"type": "object", "properties": {
                 "customer_number": {"type": "string"}}, "required": ["customer_number"]},
+        }},
+    },
+    {
+        "func": soeg_vare, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "soeg_vare",
+            "description": "Søg i vare-/materiale-kataloget (fx 'muffe', 'muffe 28mm'). Returnerer op til 5 "
+                           "varer (vare_id, varenummer, beskrivelse, pris) + 'flere' = hvor mange flere der er. "
+                           "Præciserer brugeren søgningen, kommer der færre.",
+            "parameters": {"type": "object", "properties": {
+                "soegetekst": {"type": "string"}}, "required": ["soegetekst"]},
+        }},
+    },
+    {
+        "func": tilfoej_vare, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "tilfoej_vare",
+            "description": "Læg en vare/materiale på en sag. Brug vare_id fra soeg_vare. antal = mængde (default 1). "
+                           "Medtag gerne varenummer og beskrivelse fra den valgte vare.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}, "vare_id": {"type": "string"},
+                "antal": {"type": "number"}, "varenummer": {"type": "string"},
+                "beskrivelse": {"type": "string"}},
+                "required": ["sagsnummer", "vare_id"]},
         }},
     },
     {
