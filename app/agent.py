@@ -2,7 +2,7 @@
 import json
 from datetime import datetime
 from openai import OpenAI
-from .config import OPENAI_API_KEY, OPENAI_MODEL, now_local
+from .config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_REASONING, now_local
 from . import tools, db
 
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -116,10 +116,13 @@ def run_agent(ctx: dict, user_message: str, max_steps: int = 6) -> str:
 
     tool_schemas = tools.schemas_for_role(ctx["rolle"])
 
+    kwargs = dict(model=OPENAI_MODEL, tools=tool_schemas, tool_choice="auto")
+    # Lavt reasoning-niveau = hurtigere svar (kun understøttet af gpt-5/o-modeller)
+    if OPENAI_MODEL.startswith(("gpt-5", "o1", "o3", "o4")):
+        kwargs["reasoning_effort"] = OPENAI_REASONING
+
     for _ in range(max_steps):
-        resp = client.chat.completions.create(
-            model=OPENAI_MODEL, messages=messages, tools=tool_schemas, tool_choice="auto",
-        )
+        resp = client.chat.completions.create(messages=messages, **kwargs)
         msg = resp.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))
 

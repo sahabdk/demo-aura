@@ -100,6 +100,8 @@ async def telegram_webhook(secret: str, request: Request):
         telegram.send_message(chat["id"], "Du har ikke adgang til Aura. Kontakt din leder.")
         return {"ok": True}
 
+    telegram.send_chat_action(chat["id"])   # vis "skriver…" med det samme
+
     # Tekst eller talebesked — talte beskeder besvares med tale, skrevne med tekst
     var_tale = bool(msg.get("voice"))
     if msg.get("text"):

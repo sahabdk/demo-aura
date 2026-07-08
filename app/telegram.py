@@ -14,6 +14,14 @@ def send_message(chat_id, text: str):
     requests.get(f"{API}/sendMessage", params={"chat_id": chat_id, "text": text}, timeout=30)
 
 
+def send_chat_action(chat_id, action: str = "typing"):
+    """Vis 'skriver…' (eller 'optager…') mens vi arbejder — bedre oplevet svartid."""
+    try:
+        requests.post(f"{API}/sendChatAction", json={"chat_id": chat_id, "action": action}, timeout=10)
+    except Exception:
+        pass
+
+
 def _keyboard(rows):
     """rows = [[(tekst, callback_data), ...], ...] -> Telegram inline keyboard."""
     return {"inline_keyboard": [
