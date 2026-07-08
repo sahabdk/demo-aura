@@ -122,11 +122,13 @@ def add_case_material(case_number, identifier=None, quantity=1,
     if not cid:
         raise RuntimeError(f"kunne ikke finde sag {case_number}")
     felter = [f"caseId: {int(cid)}", f"quantity: {float(quantity)}"]
-    if identifier is not None:
-        felter.append(f'identifier: "{_q(str(identifier))}"')
-    if product_number:
-        felter.append(f'productNumber: "{_q(str(product_number))}"')
-    if description:
-        felter.append(f'description: "{_q(description)}"')
+    ident = str(identifier) if identifier is not None else ""
+    if "." in ident:      # leverandør-vare: identifier-token bærer varenummer + priser
+        felter.append(f'identifier: "{_q(ident)}"')
+    else:                 # egen/manuel vare: send varenummer + beskrivelse direkte
+        if product_number:
+            felter.append(f'productNumber: "{_q(str(product_number))}"')
+        if description:
+            felter.append(f'description: "{_q(description)}"')
     q = f'mutation {{ createCaseMaterial(input: {{{", ".join(felter)}}}) {{ id }} }}'
     return _gql(q).get("createCaseMaterial") or {}
