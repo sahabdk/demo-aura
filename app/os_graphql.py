@@ -32,23 +32,77 @@ def _q(s):
 
 # ---------- varesøgning ----------
 
-def search_products(term: str, limit: int = 5):
-    """Søg i vare-kataloget. Returnerer op til 'limit' varer + evt. flere."""
+def _pris_kr(suppliers):
+    """Vælg en pris (kr) fra leverandør-listen. Priser er i øre."""
+    for s in suppliers or []:
+        v = s.get("salesPrice") or s.get("listPrice")
+        if v:
+            try:
+                return round(float(v) / 100.0, 2)
+            except (ValueError, TypeError):
+                pass
+    return None
+
+
+def _supplier_products(term, limit):
+    """Leverandør-katalog (kræver klarpris-adgang på API-nøglen)."""
     q = f'''{{
-      products(pagination: {{cursor: null, limit: {int(limit) + 1}}}, search: {{query: "{_q(term)}"}}) {{
-        items {{ id number description costPrice listPrice }}
+      supplierProducts(search: "{_q(term)}", pagination: {{cursor: null, limit: {int(limit) + 1}}},
+                       searchOrigin: OFFER) {{
+        identifier description number eanNumber
+        suppliers {{ salesPrice listPrice displayName }}
+      }}
+    }}'''
+    rows = _gql(q).get("supplierProducts") or []
+    return [{
+        "id": r.get("identifier"), "number": r.get("number"), "ean": r.get("eanNumber"),
+        "description": r.get("description"), "price_kr": _pris_kr(r.get("suppliers")),
+    } for r in rows]
+
+
+def _own_products(term, limit):
+    """Firmaets egne varer (products-kataloget)."""
+    q = f'''{{
+      products(pagination: {{cursor: null, limit: {int(limit) + 1}}},
+               search: {{query: "{_q(term)}", fields: ["description", "number"]}}) {{
+        items {{ id number description listPrice }}
       }}
     }}'''
     items = (_gql(q).get("products") or {}).get("items") or []
-    flere = max(0, len(items) - int(limit))
-    return items[:int(limit)], flere
+    out = []
+    for p in items:
+        try:
+            pris = round(float(p.get("listPrice")), 2) if p.get("listPrice") else None
+        except (ValueError, TypeError):
+            pris = None
+        out.append({"id": p.get("id"), "number": p.get("number"), "ean": p.get("number"),
+                    "description": p.get("description"), "price_kr": pris})
+    return out
+
+
+def search_products(term: str, limit: int = 5):
+    """Søg vare-katalog. Prøver leverandør-kataloget først, ellers firmaets egne varer.
+    Returnerer [{id, number, ean, description, price_kr}] + hvor mange flere der er."""
+    out = []
+    try:
+        out = _supplier_products(term, limit)
+    except Exception:
+        out = []
+    if not out:
+        try:
+            out = _own_products(term, limit)
+        except Exception:
+            out = []
+    flere = max(0, len(out) - int(limit))
+    return out[:int(limit)], flere
 
 
 def product_by_ean(ean: str):
-    """Find præcis vare ud fra stregkode/EAN-nummer (varens 'number'-felt)."""
-    items, _ = search_products(ean, limit=10)
+    """Find præcis vare ud fra stregkode/EAN-nummer."""
+    items, _ = search_products(str(ean), limit=10)
+    e = str(ean).strip()
     for p in items:
-        if str(p.get("number") or "").strip() == str(ean).strip():
+        if str(p.get("ean") or "").strip() == e or str(p.get("number") or "").strip() == e:
             return p
     return items[0] if items else None
 

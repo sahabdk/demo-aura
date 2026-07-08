@@ -296,8 +296,8 @@ def se_aftaler(args, ctx):
 
 
 def _pris(p):
-    """Vis listepris pænt hvis muligt."""
-    v = p.get("listPrice")
+    """Vis pris pænt hvis muligt."""
+    v = p.get("price_kr")
     if v in (None, ""):
         return None
     try:
