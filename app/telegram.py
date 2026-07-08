@@ -3,7 +3,8 @@ import io
 import re
 import requests
 from openai import OpenAI
-from .config import TELEGRAM_TOKEN, OPENAI_API_KEY, OPENAI_TTS_MODEL, OPENAI_TTS_VOICE
+from .config import (TELEGRAM_TOKEN, OPENAI_API_KEY, OPENAI_TTS_MODEL, OPENAI_TTS_VOICE,
+                     OPENAI_TTS_INSTRUCTIONS, OPENAI_STT_MODEL)
 
 API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 FILE_API = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}"
@@ -73,8 +74,9 @@ def transcribe_voice(file_id: str) -> str:
     audio = io.BytesIO(_download_voice(file_id))
     audio.name = "voice.ogg"
     tr = _client.audio.transcriptions.create(
-        model="whisper-1", file=audio, language="da",
-        prompt="Dansk talebesked om en VVS-sag. Indeholder ofte ordet 'sag' efterfulgt af et tal, samt kundenavne og adresser.",
+        model=OPENAI_STT_MODEL, file=audio, language="da",
+        prompt="Dansk talebesked om en VVS-/el-sag. Indeholder ofte ordet 'sag' efterfulgt af et tal, "
+               "samt kundenavne, adresser, varenavne og materialer.",
     )
     return tr.text
 
@@ -134,11 +136,13 @@ def _til_tale(text: str) -> str:
 
 
 def synthesize_voice(text: str) -> bytes:
-    """Lav tale (OGG/Opus) ud fra tekst med OpenAI's billige tekst-til-tale.
-    Tal og forkortelser laves om til ord, så det lyder naturligt på dansk."""
-    resp = _client.audio.speech.create(
-        model=OPENAI_TTS_MODEL, voice=OPENAI_TTS_VOICE, input=_til_tale(text), response_format="opus",
-    )
+    """Lav tale (OGG/Opus) ud fra tekst. Tal/forkortelser laves om til ord, så det
+    lyder naturligt på dansk. gpt-4o-*-tts understøtter en tone-instruktion."""
+    kwargs = dict(model=OPENAI_TTS_MODEL, voice=OPENAI_TTS_VOICE,
+                  input=_til_tale(text), response_format="opus")
+    if "gpt-4o" in OPENAI_TTS_MODEL and OPENAI_TTS_INSTRUCTIONS:
+        kwargs["instructions"] = OPENAI_TTS_INSTRUCTIONS
+    resp = _client.audio.speech.create(**kwargs)
     return resp.content
 
 

@@ -8,8 +8,12 @@ load_dotenv()
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
-OPENAI_TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "tts-1")   # billig tekst-til-tale
+OPENAI_TTS_MODEL = os.environ.get("OPENAI_TTS_MODEL", "gpt-4o-mini-tts")  # naturlig, klar tale
 OPENAI_TTS_VOICE = os.environ.get("OPENAI_TTS_VOICE", "nova")    # stemme (alloy/echo/fable/onyx/nova/shimmer)
+OPENAI_TTS_INSTRUCTIONS = os.environ.get(
+    "OPENAI_TTS_INSTRUCTIONS",
+    "Tal tydeligt, roligt og venligt på dansk. Udtal tal og adresser klart.")
+OPENAI_STT_MODEL = os.environ.get("OPENAI_STT_MODEL", "gpt-4o-transcribe")  # bedre dansk-forståelse
 # Reasoning-niveau for gpt-5/o-modeller: minimal|low|medium|high. Lavt = hurtigere svar.
 OPENAI_REASONING = os.environ.get("OPENAI_REASONING", "low")
 
