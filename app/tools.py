@@ -137,15 +137,9 @@ def _set_kontakt_levering(sagsnummer, customer_number, args):
     if args.get("kontaktperson"):
         try:
             kn = customer_number or (os_api.get_case(sagsnummer) or {}).get("customer_number")
-            if not kn:
-                out["kontaktperson_fejl"] = "kunne ikke finde kundenummer på sagen"
-            else:
-                info = os_api.link_kontaktperson(sagsnummer, kn, args["kontaktperson"])
-                if info.get("metode") == "kort":
-                    out["kontaktperson"] = f"{info['navn']} (sat i Kontaktperson-kortet)"
-                else:
-                    out["kontaktperson"] = (f"{info['navn']} (lagt i Rekvirenten — findes ikke som "
-                                            "fast kontakt på kunden, så Kontaktperson-kortet kan ikke udfyldes via API)")
+            info = os_gql.set_case_contact_person(sagsnummer, kn, args["kontaktperson"])
+            handling = "oprettet og sat" if info.get("oprettet") else "sat"
+            out["kontaktperson"] = f"{info['navn']} ({handling} i Kontaktperson-kortet)"
         except Exception as e:
             out["kontaktperson_fejl"] = str(e)
     if args.get("leveringsadresse"):

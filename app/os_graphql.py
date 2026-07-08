@@ -132,3 +132,57 @@ def add_case_material(case_number, identifier=None, quantity=1,
             felter.append(f'description: "{_q(description)}"')
     q = f'mutation {{ createCaseMaterial(input: {{{", ".join(felter)}}}) {{ id }} }}'
     return _gql(q).get("createCaseMaterial") or {}
+
+
+# ---------- kontaktperson-kort (createContactPerson + link til sag) ----------
+
+def _case_and_customer_ids(case_number):
+    """Sagens interne id + kundens interne id (til createContactPerson)."""
+    q = f'{{ caseByCaseNumber(caseNumber: "{_q(str(case_number))}") {{ id customer {{ id }} }} }}'
+    c = _gql(q).get("caseByCaseNumber") or {}
+    return c.get("id"), (c.get("customer") or {}).get("id")
+
+
+def create_contact_person(customer_internal_id, name, email=None, phone=None):
+    felter = [f'name: "{_q(name)}"', f"customerId: {int(customer_internal_id)}"]
+    if email:
+        felter.append(f'email: "{_q(email)}"')
+    if phone:
+        felter.append(f'phoneNumber: "{_q(phone)}"')
+    q = f'mutation {{ createContactPerson(input: {{{", ".join(felter)}}}) {{ id name }} }}'
+    return _gql(q).get("createContactPerson") or {}
+
+
+def set_case_contact_person(case_number, customer_number, name, email=None, phone=None):
+    """Find eller OPRET en kontakt på kunden og sæt den i sagens Kontaktperson-kort.
+    Returnerer {'navn', 'oprettet'}."""
+    from . import ordrestyring as os_api
+    navn_l = (name or "").strip().lower()
+    if not navn_l:
+        raise RuntimeError("tomt kontaktperson-navn")
+
+    # 1) findes kontakten allerede på kunden? (v2 include=contacts)
+    contact_id = None
+    if customer_number:
+        try:
+            _, contacts = os_api._debtor_med_kontakter(customer_number)
+            contact_id = next((c.get("id") for c in contacts
+                               if (c.get("name") or "").strip().lower() == navn_l), None)
+        except Exception:
+            contact_id = None
+
+    oprettet = False
+    if not contact_id:
+        # 2) opret kontakten på kunden (kræver kundens interne id fra sagen)
+        _, customer_internal_id = _case_and_customer_ids(case_number)
+        if not customer_internal_id:
+            raise RuntimeError("kunne ikke finde kundens interne id fra sagen")
+        ny = create_contact_person(customer_internal_id, name, email, phone)
+        contact_id = ny.get("id")
+        oprettet = True
+    if not contact_id:
+        raise RuntimeError("kunne ikke oprette kontaktperson")
+
+    # 3) sæt kontaktens id i sagens Kontaktperson-kort (v2 contact-felt)
+    os_api.update_case(case_number, kontaktperson=str(contact_id))
+    return {"navn": name, "oprettet": oprettet}
