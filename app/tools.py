@@ -14,7 +14,7 @@ def _norm(s):
     return (s or "").strip().lower()
 
 
-def fuzzy_find_customers(query, limit=8):
+def fuzzy_find_customers(query, limit=8, with_scores=False):
     """Fleksibel kundesøgning over hele kundelisten (case-insensitiv, delvis, ~match).
     Søger i både navn og adresse, så Aura kan foreslå selv ved upræcis stavning."""
     q = _norm(query)
@@ -27,34 +27,49 @@ def fuzzy_find_customers(query, limit=8):
         addr = _norm(d.get("customer_address"))
         city = _norm(d.get("customer_city"))
         hay = f"{name} {addr} {city}"
+        matched = sum(1 for t in tokens if t in hay)
         if q in name or q in addr or q in city:
             score = 1.0
-        elif tokens and all(t in hay for t in tokens):
-            score = 0.9          # alle søgeord findes (fx fornavn + by)
+        elif tokens and matched == len(tokens):
+            score = 0.97         # ALLE søgeord findes (fx navn + vej) -> stærkeste match
+        elif tokens and matched:
+            # Delvist: gav brugeren flere ord (fx navn + vej) men kun nogle passer, så
+            # er det et svagere match end en fuld-træffer. Skalér efter hvor stor en andel
+            # der matcher, så navn-kun-match ikke overhaler et navn+vej-match.
+            frac = matched / len(tokens)
+            fuzzy = max([difflib.SequenceMatcher(None, t, name).ratio() for t in tokens] + [0])
+            score = min(0.88, 0.55 + 0.33 * frac, max(fuzzy, 0.5 * frac + 0.4))
         else:
-            # Sammenlign både hele teksten og hvert ord med navnet (bedste match tæller)
             ratios = [difflib.SequenceMatcher(None, q, name).ratio()]
             ratios += [difflib.SequenceMatcher(None, t, name).ratio() for t in tokens]
             score = max(ratios)
         scored.append((score, d))
     scored.sort(key=lambda x: x[0], reverse=True)
     # 0.72-tærskel: ægte tastefejl (fx 'kristian'~'christian') fanges, men ikke-relaterede navne ryger fra
-    return [d for s, d in scored if s >= 0.72][:limit]
+    hits = [(s, d) for s, d in scored if s >= 0.72][:limit]
+    return hits if with_scores else [d for s, d in hits]
 
 
 # ---------- værktøjs-implementeringer ----------
 
 def soeg_kunde(args, ctx):
     query = args.get("soegetekst") or args.get("navn") or args.get("adresse") or ""
-    rows = fuzzy_find_customers(query)
-    if not rows:
+    scored = fuzzy_find_customers(query, with_scores=True)
+    if not scored:
         return {"resultat": "ingen kunder fundet", "forslag": []}
-    return {"kunder": [
+    kunder = [
         {"customer_number": r.get("customer_number"), "navn": r.get("customer_name"),
          "adresse": r.get("customer_address"), "postnr": r.get("customer_postalcode"),
          "by": r.get("customer_city")}
-        for r in rows
-    ]}
+        for s, r in scored
+    ]
+    # Klart bedste match: enten kun én, eller topscoren ligger tydeligt over næste.
+    # Så kan Aura vælge direkte uden at spørge (fx bruger gav navn + vej der kun passer på én).
+    top = scored[0][0]
+    naest = scored[1][0] if len(scored) > 1 else 0
+    entydig = len(scored) == 1 or (top >= 0.9 and top - naest >= 0.1)
+    return {"kunder": kunder, "entydigt_match": entydig,
+            "bedste": kunder[0] if entydig else None}
 
 
 def soeg_sager(args, ctx):
@@ -346,8 +361,9 @@ TOOLS = [
         "schema": {"type": "function", "function": {
             "name": "soeg_kunde",
             "description": "Søg en kunde fleksibelt via navn ELLER adresse (delvis/upræcis er ok — den foreslår). "
-                           "Send ét felt 'soegetekst' med det brugeren sagde, fx 'christian' eller 'Ribevej 25'. "
-                           "Returnerer en liste af mulige kunder med customer_number, navn, adresse, postnr, by.",
+                           "Send ét felt 'soegetekst' med ALT brugeren sagde, fx 'christian' eller 'christian ribevej 25'. "
+                           "Returnerer 'kunder' (customer_number, navn, adresse, postnr, by), 'entydigt_match' (true "
+                           "hvis der klart kun er én rigtig) og 'bedste' (den kunde du så kan bruge direkte).",
             "parameters": {"type": "object", "properties": {
                 "soegetekst": {"type": "string"}}, "required": ["soegetekst"]},
         }},
