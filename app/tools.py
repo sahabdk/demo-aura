@@ -453,7 +453,9 @@ def registrer_timer(args, ctx):
             detalje = f"samme fejl for alle {len(fejl_pr_type)} typer: {unikke[0]}"
         else:
             detalje = "; ".join(f"{n}: {f}" for n, f in fejl_pr_type)
-        return {"fejl": f"kunne ikke registrere timer (emp_id {emp_id}, sag-internt-id {cid}): {detalje}"}
+        fejl_txt = f"kunne ikke registrere timer (emp_id {emp_id}, sag-internt-id {cid}): {detalje}"
+        print(f"[registrer_timer] {fejl_txt}", flush=True)   # fuld raa fejl i Railway-loggen
+        return {"fejl": fejl_txt}
     brutto = round((stop - start) / 3600, 2)
     type_navn = next((t.get("title") for t in typer if t.get("id") == brugt), "")
     svar = f"Registreret {brutto} timer paa sag {sag} ({fra}-{til} den {dato})"
