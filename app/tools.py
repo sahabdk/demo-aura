@@ -406,9 +406,6 @@ def registrer_timer(args, ctx):
     if not emp_id:
         return {"resultat": "jeg kunne ikke finde din medarbejder i ordrestyring. Sig hvilket "
                             "medarbejdernavn timerne skal paa (fx paa Mads Hansen)."}
-    htype = os_api.find_hour_type(args.get("type"))
-    if not htype:
-        return {"fejl": "kunne ikke finde en time-type i ordrestyring"}
     # Beskrivelse + pause/tillaeg (API'et har ikke egne felter -> noteres i teksten)
     remark = (args.get("beskrivelse") or "").strip()
     ekstra = []
@@ -424,13 +421,40 @@ def registrer_timer(args, ctx):
     cid = os_gql._case_internal_id(sag)
     if not cid:
         return {"fejl": f"kunne ikke finde sag {sag}"}
-    try:
-        os_api.register_hours(case_id=cid, emp_id=emp_id, start_time=start, stop_time=stop,
-                              hour_type=htype, remark=remark)
-    except Exception as e:
-        return {"fejl": f"kunne ikke registrere timer: {e}"}
+    # Time-typer: medarbejderen har maaske kun lov til nogle. Proev den oenskede/standard
+    # foerst; afvises den paa rettigheder, proev de oevrige typer indtil en gaar igennem.
+    typer = os_api.employee_types()
+    kandidater = []
+    valgt = os_api.find_hour_type(args.get("type"))
+    if valgt:
+        kandidater.append(valgt)
+    if not args.get("type"):   # ingen bestemt type oensket -> fald tilbage til de andre
+        for t in typer:
+            tid = t.get("id")
+            if tid and tid not in kandidater:
+                kandidater.append(tid)
+    if not kandidater:
+        return {"fejl": "kunne ikke finde en time-type i ordrestyring"}
+    brugt, sidste_fejl = None, None
+    for ht in kandidater:
+        try:
+            os_api.register_hours(case_id=cid, emp_id=emp_id, start_time=start, stop_time=stop,
+                                  hour_type=ht, remark=remark)
+            brugt = ht
+            break
+        except Exception as e:
+            sidste_fejl = str(e)
+            lav = sidste_fejl.lower()
+            if "timetype" not in lav and "lov til" not in lav:
+                break   # anden slags fejl -> stop, det hjaelper ikke at proeve flere typer
+    if brugt is None:
+        return {"fejl": f"kunne ikke registrere timer: {sidste_fejl}"}
     brutto = round((stop - start) / 3600, 2)
-    return {"resultat": f"Registreret {brutto} timer paa sag {sag} ({fra}-{til} den {dato})"}
+    type_navn = next((t.get("title") for t in typer if t.get("id") == brugt), "")
+    svar = f"Registreret {brutto} timer paa sag {sag} ({fra}-{til} den {dato})"
+    if type_navn:
+        svar += f", type: {type_navn}"
+    return {"resultat": svar}
 
 
 # ---------- registry: skema + funktion + tilladte roller ----------
