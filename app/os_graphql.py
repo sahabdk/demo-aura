@@ -225,14 +225,12 @@ def describe_hour_input():
 # ---------- timeregistrering via GraphQL (v2 POST /hours er blokeret, se overlevering §8) ----------
 
 def pause_types():
-    """Firmaets pause-typer (fx Frokost, 30 min): [{id, name, minutes}]."""
-    try:
-        rows = _gql("{ pauses { id name minutes } }").get("pauses")
-    except Exception as e:
-        print(f"[pause_types] liste-form fejlede: {str(e)[:150]} - proever items-form", flush=True)
-        rows = (_gql("{ pauses { items { id name minutes } } }").get("pauses") or {}).get("items")
+    """Firmaets pause-typer (fx Frokost, 30 min): [{id, name, minutes}].
+    'pauses' er pagineret (PausePagination) og kraever pagination-argumentet."""
+    q = "{ pauses(pagination: {cursor: null, limit: 50}) { items { id name minutes } } }"
+    rows = (_gql(q).get("pauses") or {}).get("items") or []
     print(f"[pause_types] {rows}", flush=True)
-    return rows or []
+    return rows
 
 
 def create_hour(*, case_id, user_id, hour_type_id, start_time, stop_time,
