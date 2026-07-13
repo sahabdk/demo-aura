@@ -189,6 +189,24 @@ def describe_hour_input():
             continue
         if t.get("inputFields"):
             detaljer[tn] = {f.get("name"): _ts(f.get("type")) for f in t["inputFields"]}
+    # gaa et niveau dybere: nested input-typer (fx PauseInput, HourAdditionInput)
+    SKALARER = {"Int", "String", "Boolean", "Float", "ID", "Upload"}
+    nested = set()
+    for felter in list(detaljer.values()):
+        for ft in felter.values():
+            tn = ft.replace("!", "").replace("[", "").replace("]", "")
+            if tn not in SKALARER and tn not in detaljer:
+                nested.add(tn)
+    for tn in nested:
+        q3 = ('{ __type(name: "' + tn + '") { kind inputFields { name '
+              "type { kind name ofType { kind name ofType { kind name ofType { kind name } } } } "
+              "} } }")
+        try:
+            t = _gql(q3).get("__type") or {}
+        except Exception:
+            continue
+        if t.get("inputFields"):
+            detaljer[tn] = {f.get("name"): _ts(f.get("type")) for f in t["inputFields"]}
     return args, detaljer
 
 
