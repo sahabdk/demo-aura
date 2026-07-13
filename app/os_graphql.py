@@ -135,6 +135,24 @@ def add_case_material(case_number, identifier=None, quantity=1,
     return _gql(q).get("createCaseMaterial") or {}
 
 
+# ---------- DEBUG: findes der timer-mutationer i GraphQL? ----------
+
+def find_hour_fields():
+    """Introspektér GraphQL-skemaet og find alle queries/mutationer der ligner timer
+    (hour/time/tid i navnet). Bruges til at afgøre om timeregistrering kan gå via
+    GraphQL i stedet for det blokerede v2 POST /hours."""
+    q = "{ __schema { mutationType { fields { name } } queryType { fields { name } } } }"
+    data = _gql(q)
+
+    def _names(t):
+        return [f.get("name") or "" for f in (((data.get("__schema") or {}).get(t) or {}).get("fields") or [])]
+
+    alle = {"mutations": _names("mutationType"), "queries": _names("queryType")}
+    hits = {k: [x for x in v if any(w in x.lower() for w in ("hour", "time", "tid"))]
+            for k, v in alle.items()}
+    return hits, alle
+
+
 # ---------- kontaktperson-kort (createContactPerson + link til sag) ----------
 
 def _case_and_customer_ids(case_number):

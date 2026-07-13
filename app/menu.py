@@ -242,7 +242,7 @@ def vis_timetyper(chat_id):
     for t in typer:
         pers = " (personlig)" if t.get("is_personal") else ""
         linjer.append(f"- {t.get('title') or '?'} (id: {t.get('id')}){pers}")
-    telegram.send_message(chat_id, "\u23f1 Timetyper i ordrestyring:\n" + "\n".join(linjer))
+    telegram.send_message(chat_id, "⏱ Timetyper i ordrestyring:\n" + "\n".join(linjer))
 
 
 def vis_raa_timer(chat_id, sagsnummer=None):
@@ -273,6 +273,24 @@ def vis_raa_timer(chat_id, sagsnummer=None):
     telegram.send_message(chat_id, "🔧 Raa timelinjer fra ordrestyring:\n\n" + "\n\n".join(linjer))
 
 
+def vis_graphql_timer(chat_id):
+    """DEBUG: lister timer-relaterede queries/mutationer i ordrestyrings GraphQL-skema."""
+    from . import os_graphql as os_gql
+    try:
+        hits, alle = os_gql.find_hour_fields()
+    except Exception as e:
+        telegram.send_message(chat_id, f"GraphQL-introspektion fejlede: {e}")
+        return
+    print(f"[vis_graphql_timer] hits={hits}", flush=True)
+    print(f"[vis_graphql_timer] ALLE mutationer: {alle.get('mutations')}", flush=True)
+    telegram.send_message(
+        chat_id,
+        "🔧 GraphQL timer-kandidater:\n"
+        f"Mutationer: {', '.join(hits.get('mutations') or []) or 'ingen'}\n"
+        f"Queries: {', '.join(hits.get('queries') or []) or 'ingen'}\n"
+        f"(alle {len(alle.get('mutations') or [])} mutationer ligger i server-loggen)")
+
+
 # ---------- tekst/stemme-kommandoer ----------
 
 def try_command(chat_id, telegram_id, text):
@@ -280,6 +298,9 @@ def try_command(chat_id, telegram_id, text):
     t = (text or "").strip().lower()
     if t in ("/menu", "menu"):
         send_main_menu(chat_id)
+        return True
+    if "graphql" in t and "timer" in t:   # DEBUG: "vis graphql timer" - findes timer-mutationer?
+        vis_graphql_timer(chat_id)
         return True
     if "timer" in t and ("rå" in t or "raa" in t or "raw" in t):   # DEBUG: "vis rå timer [på sag 120]"
         m0 = re.search(r"sag\s+(\d+)", t)
