@@ -472,3 +472,52 @@ def link_kontaktperson(case_number, customer_number, navn):
     # Ingen eksisterende kontakt -> synligt fallback i Rekvirenten
     update_case(case_number, requestor=navn)
     return {"metode": "rekvirent", "navn": navn}
+
+
+# ---------- Timer (hours / timeregistrering på en sag) ----------
+
+_EMP_TYPES = {"rows": [], "ts": 0.0}
+
+
+def employee_types(force=False):
+    """Firmaets time-typer (Employee types: id + title), cachet 30 min. Bruges som 'Type'."""
+    now = time.time()
+    if not force and _EMP_TYPES["rows"] and (now - _EMP_TYPES["ts"]) < 1800:
+        return _EMP_TYPES["rows"]
+    _EMP_TYPES["rows"] = _data(_req("GET", "/employee-types")) or []
+    _EMP_TYPES["ts"] = now
+    return _EMP_TYPES["rows"]
+
+
+def find_hour_type(navn=None):
+    """Find en time-type-id ud fra navn (fx 'normal', 'overtid'); ellers en fornuftig standard."""
+    typer = employee_types()
+    if not typer:
+        return None
+    if navn:
+        nl = str(navn).strip().lower()
+        for t in typer:
+            if (t.get("title") or "").strip().lower() == nl:
+                return t.get("id")
+        for t in typer:
+            if nl and nl in (t.get("title") or "").strip().lower():
+                return t.get("id")
+    # standard: foretræk en almindelig arbejds-type, ellers den første
+    for t in typer:
+        if any(o in (t.get("title") or "").lower() for o in ("normal", "arbejde", "alm", "standard", "time")):
+            return t.get("id")
+    return typer[0].get("id")
+
+
+def register_hours(*, case_id, emp_id, start_time, stop_time, hour_type, remark=""):
+    """Opret en timelinje på en sag. Tider er unix-sekunder. Returnerer det oprettede objekt."""
+    body = {
+        "case_id": int(case_id),
+        "emp_id": int(emp_id),
+        "start_time": int(start_time),
+        "stop_time": int(stop_time),
+        "hour_type": int(hour_type),
+    }
+    if remark:
+        body["remark"] = remark
+    return _data(_req("POST", "/hours", json=body))

@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from . import ordrestyring as os_api
 from . import os_graphql as os_gql
 from . import db
+from .config import TZ, now_local
 
 
 def _norm(s):
@@ -353,9 +354,103 @@ def tilfoej_vare(args, ctx):
     return {"resultat": f"Lagt på sag {args['sagsnummer']}: {navn} × {antal}"}
 
 
+def _unix_ts(dato, hhmm):
+    """Lav unix-sekunder ud fra dato 'YYYY-MM-DD' + klokkeslaet 'HH:MM' i dansk tid."""
+    dt = datetime.strptime(f"{dato} {hhmm}", "%Y-%m-%d %H:%M")
+    try:
+        from zoneinfo import ZoneInfo
+        dt = dt.replace(tzinfo=ZoneInfo(TZ))
+    except Exception:
+        pass
+    return int(dt.timestamp())
+
+
+def _find_user_id(navn):
+    """Slaa en medarbejders ordrestyring-id op ud fra navn eller initialer."""
+    nl = (navn or "").strip().lower()
+    if not nl:
+        return None
+    for u in os_api.users():
+        full = (u.get("fullName") or f"{u.get('first_name','') or ''} {u.get('last_name','') or ''}").strip().lower()
+        if nl == full or (full and nl in full) or (u.get("init") or "").lower() == nl:
+            return u.get("id")
+    return None
+
+
+def registrer_timer(args, ctx):
+    """Registrer arbejdstimer paa en sag (fra/til-klokkeslaet, type, beskrivelse, medarbejder)."""
+    sag = args["sagsnummer"]
+    afvist = _ejer_eller_afvis(sag, ctx)
+    if afvist:
+        return afvist
+    fra = (args.get("fra") or "").strip()
+    til = (args.get("til") or "").strip()
+    if not fra or not til:
+        return {"resultat": "jeg mangler baade fra- og til-klokkeslaet (fx 08:00 til 15:30)"}
+    dato = (args.get("dato") or "").strip() or now_local().strftime("%Y-%m-%d")
+    try:
+        start = _unix_ts(dato, fra)
+        stop = _unix_ts(dato, til)
+    except ValueError:
+        return {"fejl": "kunne ikke forstaa dato eller klokkeslaet"}
+    if stop <= start:
+        return {"fejl": "sluttidspunktet skal vaere efter starttidspunktet"}
+    # Medarbejder: den der spoerger som standard; ellers slaa navnet op
+    emp_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+    if args.get("medarbejder"):
+        mid = _find_user_id(args["medarbejder"])
+        if mid:
+            emp_id = mid
+    if not emp_id:
+        return {"resultat": "din bruger er ikke koblet til en medarbejder i ordrestyring, saa jeg kan ikke "
+                            "registrere timer. Bed lederen om at koble dig."}
+    htype = os_api.find_hour_type(args.get("type"))
+    if not htype:
+        return {"fejl": "kunne ikke finde en time-type i ordrestyring"}
+    # Beskrivelse + pause/tillaeg (API'et har ikke egne felter -> noteres i teksten)
+    remark = (args.get("beskrivelse") or "").strip()
+    ekstra = []
+    if args.get("pause_min"):
+        try:
+            ekstra.append(f"pause {int(args['pause_min'])} min")
+        except (ValueError, TypeError):
+            pass
+    if args.get("tillaeg"):
+        ekstra.append(f"tillaeg: {args['tillaeg']}")
+    if ekstra:
+        remark = (remark + " (" + ", ".join(ekstra) + ")").strip()
+    cid = os_gql._case_internal_id(sag)
+    if not cid:
+        return {"fejl": f"kunne ikke finde sag {sag}"}
+    try:
+        os_api.register_hours(case_id=cid, emp_id=emp_id, start_time=start, stop_time=stop,
+                              hour_type=htype, remark=remark)
+    except Exception as e:
+        return {"fejl": f"kunne ikke registrere timer: {e}"}
+    brutto = round((stop - start) / 3600, 2)
+    return {"resultat": f"Registreret {brutto} timer paa sag {sag} ({fra}-{til} den {dato})"}
+
+
 # ---------- registry: skema + funktion + tilladte roller ----------
 
 TOOLS = [
+    {
+        "func": registrer_timer, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "registrer_timer",
+            "description": "Registrer arbejdstimer paa en sag (Timer-fanen): hvor laenge arbejdet tog. "
+                           "Angiv sagsnummer + fra og til som klokkeslaet (HH:MM). Valgfrit: dato (YYYY-MM-DD, "
+                           "default i dag), type (time-type som 'normal'/'overtid'), beskrivelse, medarbejder "
+                           "(navn - default den der spoerger), pause_min (pause i minutter) og tillaeg. "
+                           "Pause og tillaeg noteres i beskrivelsen.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}, "fra": {"type": "string"}, "til": {"type": "string"},
+                "dato": {"type": "string"}, "type": {"type": "string"},
+                "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
+                "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
+                "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
     {
         "func": soeg_kunde, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
