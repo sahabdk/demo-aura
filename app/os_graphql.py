@@ -72,7 +72,8 @@ def _own_products(term, limit):
     out = []
     for p in items:
         try:
-            pris = round(float(p.get("listPrice")), 2) if p.get("listPrice") else None
+            # listPrice er i øre (fx 15000 = 150,00 kr) — samme som leverandør-priser
+            pris = round(float(p.get("listPrice")) / 100.0, 2) if p.get("listPrice") else None
         except (ValueError, TypeError):
             pris = None
         out.append({"id": p.get("id"), "number": p.get("number"), "ean": p.get("number"),
