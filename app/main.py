@@ -89,7 +89,7 @@ async def telegram_webhook(secret: str, request: Request):
 
     # Ignorér service-/system-beskeder (fx "pinned a message", medlem tilføjet) og
     # bot-beskeder — de har ingen rigtig afsender og må ikke udløse adgangs-afvisning.
-    if not (msg.get("text") or msg.get("voice")):
+    if not (msg.get("text") or msg.get("voice") or msg.get("photo")):
         return {"ok": True}
     if msg.get("from", {}).get("is_bot"):
         return {"ok": True}
@@ -106,6 +106,28 @@ async def telegram_webhook(secret: str, request: Request):
     var_tale = bool(msg.get("voice"))
     if msg.get("text"):
         text = msg["text"]
+    elif msg.get("photo"):
+        # Foto = stregkode-scanning af en vare (EAN). Største foto-udgave er sidst i listen.
+        try:
+            data = telegram.download_file(msg["photo"][-1]["file_id"])
+            from . import stregkode
+            kode = stregkode.find_stregkode(data)
+        except Exception as e:
+            log.exception("stregkode-fejl")
+            telegram.send_message(chat["id"], "Jeg kunne ikke behandle billedet — prøv igen.")
+            _notify_leader(f"Stregkode-fejl: {e}")
+            return {"ok": True}
+        if not kode:
+            telegram.send_message(chat["id"], "Jeg kunne ikke finde en stregkode på billedet. "
+                                              "Prøv tættere på, i bedre lys, og hold koden fladt.")
+            return {"ok": True}
+        caption = (msg.get("caption") or "").strip()
+        text = f"(Brugeren har scannet en vare-stregkode: {kode}.) "
+        if caption:
+            text += caption
+        else:
+            text += ("Find varen ud fra stregkode-nummeret (soeg med nummeret) og spoerg "
+                     "hvilken sag og hvor mange styk den skal paa.")
     elif msg.get("voice"):
         try:
             text = telegram.transcribe_voice(msg["voice"]["file_id"])

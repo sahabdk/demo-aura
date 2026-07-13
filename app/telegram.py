@@ -70,6 +70,11 @@ def _download_voice(file_id: str) -> bytes:
     return requests.get(f"{FILE_API}/{path}", timeout=60).content
 
 
+def download_file(file_id: str) -> bytes:
+    """Hent en vilkaarlig fil (fx et foto) fra Telegram."""
+    return _download_voice(file_id)
+
+
 def transcribe_voice(file_id: str) -> str:
     audio = io.BytesIO(_download_voice(file_id))
     audio.name = "voice.ogg"

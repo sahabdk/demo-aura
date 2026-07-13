@@ -6,3 +6,5 @@ python-dotenv>=1.0
 apscheduler>=3.10
 python-multipart>=0.0.9
 tzdata>=2024.1
+pillow>=10.0
+zxing-cpp>=2.2
