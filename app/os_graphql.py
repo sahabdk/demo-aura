@@ -260,6 +260,50 @@ def create_hour(*, case_id, user_id, hour_type_id, start_time, stop_time,
     return _gql(q).get("createHour") or {}
 
 
+# ---------- dokumentation: upload foto/fil til en sags Dokumentation-fane ----------
+
+def _enum_values(name):
+    """Vaerdierne i en GraphQL-enum (fx DocumentationType)."""
+    q = '{ __type(name: "' + _q(name) + '") { enumValues { name } } }'
+    t = _gql(q).get("__type") or {}
+    return [v.get("name") for v in (t.get("enumValues") or []) if v.get("name")]
+
+
+def upload_case_document(case_number, filename, data_bytes, description=None):
+    """Upload en fil (fx et foto) til sagens Dokumentation via base64.
+    Enum-vaerdierne (type/provider) slaas op ved koersel og logges, saa vi ser dem i Railway."""
+    import base64
+    cid = _case_internal_id(case_number)
+    if not cid:
+        raise RuntimeError(f"kunne ikke finde sag {case_number}")
+    typer = _enum_values("DocumentationType")
+    dtype = next((v for v in typer if "CASE" in v.upper()), typer[0] if typer else "CASE")
+    provs = _enum_values("DocumentationProvider")
+    prov = next((v for v in provs if any(w in v.upper() for w in
+                 ("INTERN", "ORDRE", "DEFAULT", "LOCAL", "STANDARD"))),
+                provs[0] if provs else "INTERNAL")
+    print(f"[upload_case_document] DocumentationType={typer} -> {dtype}; "
+          f"DocumentationProvider={provs} -> {prov}; typeId={cid}, fil={filename}, "
+          f"{len(data_bytes)} bytes", flush=True)
+    variables = {"input": {
+        "typeId": str(cid),
+        "base64": {"filename": filename, "content": base64.b64encode(data_bytes).decode("ascii")},
+    }}
+    if description:
+        variables["input"]["description"] = description
+    q = ("mutation($input: UploadDocumentationFileInput!) { "
+         f"uploadDocumentationFile(type: {dtype}, provider: {prov}, input: $input) {{ id }} }}")
+    try:
+        return _gql(q, variables).get("uploadDocumentationFile") or {}
+    except RuntimeError as e:
+        # Hvis retur-typen ikke har 'id' (eller er en skalar), proev uden selektion
+        if "id" in str(e).lower() or "selection" in str(e).lower():
+            q2 = ("mutation($input: UploadDocumentationFileInput!) { "
+                  f"uploadDocumentationFile(type: {dtype}, provider: {prov}, input: $input) }}")
+            return _gql(q2, variables).get("uploadDocumentationFile") or {}
+        raise
+
+
 # ---------- kontaktperson-kort (createContactPerson + link til sag) ----------
 
 def _case_and_customer_ids(case_number):

@@ -107,9 +107,40 @@ async def telegram_webhook(secret: str, request: Request):
     if msg.get("text"):
         text = msg["text"]
     elif msg.get("photo"):
-        # Foto = stregkode-scanning af en vare (EAN). Største foto-udgave er sidst i listen.
+        # Foto: enten stregkode-scanning af en vare ELLER "gem billedet paa sag N" (Dokumentation)
+        caption = (msg.get("caption") or "").strip()
+        cl = caption.lower()
+        m_sag = re.search(r"sag\s+(\d+)", cl)
+        vil_gemme = any(w in cl for w in ("dok", "gem", "upload", "vedhæft", "vedhaeft", "arkiv"))
         try:
             data = telegram.download_file(msg["photo"][-1]["file_id"])
+        except Exception as e:
+            log.exception("foto-download-fejl")
+            telegram.send_message(chat["id"], "Jeg kunne ikke hente billedet — prøv igen.")
+            _notify_leader(f"Foto-fejl: {e}")
+            return {"ok": True}
+        if vil_gemme and m_sag:
+            # Upload til sagens Dokumentation-fane (jun maa kun paa egne sager)
+            sag = m_sag.group(1)
+            from . import tools as _tools
+            afvist = _tools._ejer_eller_afvis(sag, {"telegram_id": from_id, "navn": user["navn"],
+                                                    "rolle": user["rolle"]})
+            if afvist:
+                telegram.send_message(chat["id"], afvist.get("resultat") or "Afvist.")
+                return {"ok": True}
+            try:
+                from . import os_graphql as os_gql
+                from .config import now_local
+                navn = f"aura_{now_local().strftime('%Y%m%d_%H%M%S')}.jpg"
+                os_gql.upload_case_document(sag, navn, data, description=caption)
+                telegram.send_message(chat["id"], f"📎 Billedet er gemt under Dokumentation på sag {sag}.")
+            except Exception as e:
+                log.exception("dokument-upload-fejl")
+                telegram.send_message(chat["id"], f"Kunne ikke gemme billedet på sag {sag} — prøv igen.")
+                _notify_leader(f"Dokument-upload-fejl: {e}")
+            return {"ok": True}
+        # Stregkode-scanning
+        try:
             from . import stregkode
             kode = stregkode.find_stregkode(data)
         except Exception as e:
@@ -119,9 +150,10 @@ async def telegram_webhook(secret: str, request: Request):
             return {"ok": True}
         if not kode:
             telegram.send_message(chat["id"], "Jeg kunne ikke finde en stregkode på billedet. "
-                                              "Prøv tættere på, i bedre lys, og hold koden fladt.")
+                                              "Prøv tættere på, i bedre lys, og hold koden fladt. "
+                                              "Ville du gemme billedet på en sag, så skriv fx "
+                                              "'gem på sag 129' som billedtekst.")
             return {"ok": True}
-        caption = (msg.get("caption") or "").strip()
         text = f"(Brugeren har scannet en vare-stregkode: {kode}.) "
         if caption:
             text += caption
