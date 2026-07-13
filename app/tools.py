@@ -538,6 +538,66 @@ def vis_raa_timer(args, ctx):
             "timer": rows}
 
 
+def sag_status(args, ctx):
+    """Samlet overblik over en sag: hvad er udfyldt, hvor meget ligger der (timer,
+    dokumenter, fakturaer), og hvad der mangler. Aura bruger det som guide."""
+    sag = args["sagsnummer"]
+    case = os_api.get_case(sag) or {}
+    if not case:
+        return {"fejl": f"kunne ikke finde sag {sag}"}
+    gql = {}
+    try:
+        gql = os_gql.case_overview(sag)
+    except Exception as e:
+        print(f"[sag_status] gql-overblik fejlede: {str(e)[:200]}", flush=True)
+    timer = []
+    try:
+        timer = [r for r in os_api.hours_raw() if str(r.get("new_case_number")) == str(sag)]
+    except Exception as e:
+        print(f"[sag_status] timer-opslag fejlede: {str(e)[:200]}", flush=True)
+    timer_sum = round(sum((int(r.get("stop_time") or 0) - int(r.get("start_time") or 0))
+                          for r in timer) / 3600, 2) if timer else 0
+    kunde = None
+    try:
+        kunde = (os_api.get_debtor(case.get("customer_number")) or {}).get("customer_name")
+    except Exception:
+        pass
+    ansvarlig = os_api.user_name(case.get("main_technician")) if case.get("main_technician") else None
+    antal_dok = gql.get("documentCount")
+    antal_timer = len(timer) or (gql.get("hoursCount") or 0)
+    status = {
+        "sagsnummer": sag,
+        "kunde": kunde,
+        "beskrivelse": (case.get("description") or gql.get("description") or "")[:300] or None,
+        "projektnavn": gql.get("projectName") or None,
+        "reference": case.get("reference") or gql.get("reference") or None,
+        "rekvisition": gql.get("requisition") or None,
+        "ansvarlig": ansvarlig,
+        "bemaerkninger": (case.get("remarks") or gql.get("remarks") or "")[:300] or None,
+        "faerdigmelding": (case.get("work_done") or gql.get("workDone") or "")[:300] or None,
+        "antal_dokumenter": antal_dok,
+        "antal_timelinjer": antal_timer,
+        "timer_i_alt": timer_sum or None,
+        "antal_fakturaer": gql.get("salesInvoicesCount"),
+        "lukket": os_api.is_closed(case),
+    }
+    mangler = []
+    if not ansvarlig:
+        mangler.append("ingen ansvarlig medarbejder tildelt")
+    if not status["beskrivelse"]:
+        mangler.append("ingen beskrivelse")
+    if not status["reference"]:
+        mangler.append("ingen reference")
+    if not antal_timer:
+        mangler.append("ingen timer registreret")
+    if not (antal_dok or 0):
+        mangler.append("ingen dokumenter/billeder")
+    if not status["faerdigmelding"] and not status["lukket"]:
+        mangler.append("ikke faerdigmeldt (ingen 'arbejde udfoert'-tekst)")
+    status["mangler"] = mangler
+    return status
+
+
 # ---------- registry: skema + funktion + tilladte roller ----------
 
 TOOLS = [
@@ -570,6 +630,20 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": sag_status, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "sag_status",
+            "description": "Samlet status/overblik paa en sag: hvad er udfyldt (kunde, beskrivelse, "
+                           "projektnavn, reference, ansvarlig, bemaerkninger, faerdigmelding), hvor "
+                           "meget der ligger paa den (antal timer/timelinjer, dokumenter/billeder, "
+                           "fakturaer) og en 'mangler'-liste. Brug ved spoergsmaal som 'hvad er status "
+                           "paa sag X', 'hvad mangler paa sagen', 'giv mig overblik over sag X', 'er "
+                           "sagen klar til fakturering'. Naevn kun de vigtigste mangler for brugeren.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}}, "required": ["sagsnummer"]},
         }},
     },
     {

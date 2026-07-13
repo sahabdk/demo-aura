@@ -260,6 +260,17 @@ def create_hour(*, case_id, user_id, hour_type_id, start_time, stop_time,
     return _gql(q).get("createHour") or {}
 
 
+# ---------- samlet sag-overblik (til sag_status-vaerktoejet) ----------
+
+def case_overview(case_number):
+    """Skalar-felter + taellere fra sagen i ET opslag (dokumenter, timer, fakturaer m.m.)."""
+    q = f'''{{ caseByCaseNumber(caseNumber: "{_q(str(case_number))}") {{
+      id caseNumber description remarks workDone reference requisition orderNumber projectName
+      createdAt updatedAt documentCount hoursCount salesInvoicesCount schemasCount
+    }} }}'''
+    return _gql(q).get("caseByCaseNumber") or {}
+
+
 # ---------- dokumentation: upload foto/fil til en sags Dokumentation-fane ----------
 
 def _enum_values(name):

@@ -412,7 +412,7 @@ def try_command(chat_id, telegram_id, text):
         vis_forfaldne(chat_id)
         return True
     m = re.search(r"sag\s+(\d+)", t)
-    if m and ("vis" in t or "detalj" in t):
+    if m and ("vis" in t or "detalj" in t) and not any(w in t for w in ("status", "mangl", "overblik")):
         nr = m.group(1)
         case = os_api.get_case(nr)
         if case:
