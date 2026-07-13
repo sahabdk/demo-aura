@@ -245,6 +245,34 @@ def vis_timetyper(chat_id):
     telegram.send_message(chat_id, "\u23f1 Timetyper i ordrestyring:\n" + "\n".join(linjer))
 
 
+def vis_raa_timer(chat_id, sagsnummer=None):
+    """DEBUG: viser raa timelinjer fra /hours med de tekniske felter (isaer hour_type),
+    saa vi kan se hvilke id'er systemet selv gemmer. Skriver ogsaa alt til server-loggen."""
+    import json as _json
+    try:
+        rows = os_api.hours_raw()
+        if not isinstance(rows, list):
+            rows = [rows]
+        if sagsnummer:
+            from . import os_graphql as os_gql
+            cid = os_gql._case_internal_id(sagsnummer)
+            filtreret = [r for r in rows if str(r.get("case_id")) == str(cid)]
+            if filtreret:
+                rows = filtreret
+        rows = rows[-5:]
+    except Exception as e:
+        telegram.send_message(chat_id, f"Kunne ikke hente raa timer: {e}")
+        return
+    print(f"[vis_raa_timer] {_json.dumps(rows, ensure_ascii=False, default=str)[:3500]}", flush=True)
+    if not rows:
+        telegram.send_message(chat_id, "Ingen timelinjer fundet i /hours.")
+        return
+    linjer = []
+    for r in rows:
+        linjer.append(_json.dumps(r, ensure_ascii=False, default=str)[:600])
+    telegram.send_message(chat_id, "🔧 Raa timelinjer fra ordrestyring:\n\n" + "\n\n".join(linjer))
+
+
 # ---------- tekst/stemme-kommandoer ----------
 
 def try_command(chat_id, telegram_id, text):
@@ -252,6 +280,10 @@ def try_command(chat_id, telegram_id, text):
     t = (text or "").strip().lower()
     if t in ("/menu", "menu"):
         send_main_menu(chat_id)
+        return True
+    if "timer" in t and ("rå" in t or "raa" in t or "raw" in t):   # DEBUG: "vis rå timer [på sag 120]"
+        m0 = re.search(r"sag\s+(\d+)", t)
+        vis_raa_timer(chat_id, m0.group(1) if m0 else None)
         return True
     # "Nye/dagens ordrer" — robust mod talt/naturligt sprog, men ikke når man vil OPRETTE noget
     skab = any(w in t for w in ("opret", "lav ", "tilføj", "registrer", "ny sag på", "opgave på"))
