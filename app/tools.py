@@ -395,15 +395,17 @@ def registrer_timer(args, ctx):
         return {"fejl": "kunne ikke forstaa dato eller klokkeslaet"}
     if stop <= start:
         return {"fejl": "sluttidspunktet skal vaere efter starttidspunktet"}
-    # Medarbejder: den der spoerger som standard; ellers slaa navnet op
-    emp_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+    # Medarbejder: eksplicit navn > koblet ordrestyring-id > match paa den der spoerger sit eget navn
+    emp_id = None
     if args.get("medarbejder"):
-        mid = _find_user_id(args["medarbejder"])
-        if mid:
-            emp_id = mid
+        emp_id = _find_user_id(args["medarbejder"])
     if not emp_id:
-        return {"resultat": "din bruger er ikke koblet til en medarbejder i ordrestyring, saa jeg kan ikke "
-                            "registrere timer. Bed lederen om at koble dig."}
+        emp_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+    if not emp_id:
+        emp_id = _find_user_id(ctx.get("navn"))
+    if not emp_id:
+        return {"resultat": "jeg kunne ikke finde din medarbejder i ordrestyring. Sig hvilket "
+                            "medarbejdernavn timerne skal paa (fx paa Mads Hansen)."}
     htype = os_api.find_hour_type(args.get("type"))
     if not htype:
         return {"fejl": "kunne ikke finde en time-type i ordrestyring"}
