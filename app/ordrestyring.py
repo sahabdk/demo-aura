@@ -509,6 +509,12 @@ def find_hour_type(navn=None):
     return typer[0].get("id")
 
 
+def hours_raw():
+    """DEBUG: hent raa timelinjer fra /hours, saa vi kan se hvilke hour_type-id'er
+    systemet selv bruger naar timer oprettes manuelt i web-UI'et."""
+    return _data(_req("GET", "/hours")) or []
+
+
 def register_hours(*, case_id, emp_id, start_time, stop_time, hour_type, remark=""):
     """Opret en timelinje på en sag. Tider er unix-sekunder. Returnerer det oprettede objekt."""
     body = {

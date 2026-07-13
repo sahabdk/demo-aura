@@ -464,9 +464,40 @@ def registrer_timer(args, ctx):
     return {"resultat": svar}
 
 
+def vis_raa_timer(args, ctx):
+    """DEBUG: hent raa timelinjer fra ordrestyring, saa vi kan se hvilke hour_type-id'er
+    systemet selv gemmer. Fuld JSON skrives til server-loggen (Railway)."""
+    import json as _json
+    rows = os_api.hours_raw()
+    if not isinstance(rows, list):
+        rows = [rows]
+    sag = (args.get("sagsnummer") or "").strip()
+    if sag:
+        cid = os_gql._case_internal_id(sag)
+        filtreret = [r for r in rows if str(r.get("case_id")) == str(cid)]
+        if filtreret:
+            rows = filtreret
+    rows = rows[-5:]
+    print(f"[vis_raa_timer] {_json.dumps(rows, ensure_ascii=False, default=str)[:3500]}", flush=True)
+    return {"resultat": f"{len(rows)} timelinjer hentet. Den fulde raa data er skrevet til "
+                        f"server-loggen. Vis brugeren felterne hour_type, emp_id og case_id ordret.",
+            "timer": rows}
+
+
 # ---------- registry: skema + funktion + tilladte roller ----------
 
 TOOLS = [
+    {
+        "func": vis_raa_timer, "roles": {"pro"},
+        "schema": {"type": "function", "function": {
+            "name": "vis_raa_timer",
+            "description": "DEBUG (kun leder): hent raa timelinjer fra ordrestyring med de tekniske "
+                           "felter (hour_type, emp_id, case_id). Bruges naar brugeren siger 'vis raa "
+                           "timer'. Valgfrit: sagsnummer for kun at se en bestemt sags timer.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}}, "required": []},
+        }},
+    },
     {
         "func": registrer_timer, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
