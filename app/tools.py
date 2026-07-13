@@ -428,10 +428,10 @@ def registrer_timer(args, ctx):
     valgt = os_api.find_hour_type(args.get("type"))
     if valgt:
         kandidater.append(valgt)
-    if not args.get("type"):   # ingen bestemt type oensket -> fald tilbage til de andre
+    if not args.get("type"):   # ingen bestemt type -> fald tilbage til ARBEJDS-typer (ikke Syg/Ferie osv.)
         for t in typer:
             tid = t.get("id")
-            if tid and tid not in kandidater:
+            if tid and tid not in kandidater and not t.get("is_personal"):
                 kandidater.append(tid)
     if not kandidater:
         return {"fejl": "kunne ikke finde en time-type i ordrestyring"}
