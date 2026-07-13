@@ -377,6 +377,31 @@ def _find_user_id(navn):
     return None
 
 
+def _find_pause(pause_min):
+    """Vaelg pause-type + antal ud fra oensket antal minutter (fx 60 -> 2 x Frokost a 30)."""
+    try:
+        typer = os_gql.pause_types()
+    except Exception:
+        return None
+    pm = int(pause_min)
+    if pm <= 0 or not typer:
+        return None
+    bedst = None
+    for pt in typer:
+        m = int(pt.get("minutes") or 0)
+        if m <= 0 or pt.get("id") is None:
+            continue
+        if pm % m == 0:   # praecist multiplum -> fx 60 min = 2 x 30-min-pause
+            return {"pauseTypeId": int(pt["id"]), "quantity": pm // m,
+                    "navn": pt.get("name") or "pause", "minutter": pm}
+        if bedst is None or abs(m - pm) < abs(int(bedst.get("minutes") or 0) - pm):
+            bedst = pt
+    if bedst:
+        return {"pauseTypeId": int(bedst["id"]), "quantity": 1,
+                "navn": bedst.get("name") or "pause", "minutter": int(bedst.get("minutes") or 0)}
+    return None
+
+
 def registrer_timer(args, ctx):
     """Registrer arbejdstimer paa en sag (fra/til-klokkeslaet, type, beskrivelse, medarbejder)."""
     sag = args["sagsnummer"]
@@ -406,14 +431,24 @@ def registrer_timer(args, ctx):
     if not emp_id:
         return {"resultat": "jeg kunne ikke finde din medarbejder i ordrestyring. Sig hvilket "
                             "medarbejdernavn timerne skal paa (fx paa Mads Hansen)."}
-    # Beskrivelse + pause/tillaeg (API'et har ikke egne felter -> noteres i teksten)
+    # Beskrivelse + tillaeg (tillaeg noteres i teksten). Pause registreres som
+    # RIGTIG pause via GraphQL ud fra firmaets pause-typer (fx Frokost 30 min).
     remark = (args.get("beskrivelse") or "").strip()
     ekstra = []
+    pause = None
     if args.get("pause_min"):
         try:
-            ekstra.append(f"pause {int(args['pause_min'])} min")
+            pause = _find_pause(int(args["pause_min"]))
         except (ValueError, TypeError):
-            pass
+            pause = None
+        if pause and pause["minutter"] != int(args.get("pause_min") or 0):
+            ekstra.append(f"pause oensket {args['pause_min']} min - registreret "
+                          f"{pause['quantity']} x {pause['navn']} ({pause['minutter']} min)")
+        if not pause:
+            try:
+                ekstra.append(f"pause {int(args['pause_min'])} min")
+            except (ValueError, TypeError):
+                pass
     if args.get("tillaeg"):
         ekstra.append(f"tillaeg: {args['tillaeg']}")
     if ekstra:
@@ -440,7 +475,9 @@ def registrer_timer(args, ctx):
         # 1) GraphQL createHour (v2 POST /hours er blokeret paa API-noeglens rettigheder)
         try:
             os_gql.create_hour(case_id=cid, user_id=emp_id, hour_type_id=ht,
-                               start_time=start, stop_time=stop, description=remark or None)
+                               start_time=start, stop_time=stop, description=remark or None,
+                               pauses=[{"pauseTypeId": pause["pauseTypeId"],
+                                        "quantity": pause["quantity"]}] if pause else None)
             brugt = ht
             print(f"[registrer_timer] GraphQL createHour OK (hourTypeId {ht})", flush=True)
             break
@@ -471,6 +508,8 @@ def registrer_timer(args, ctx):
     svar = f"Registreret {brutto} timer paa sag {sag} ({fra}-{til} den {dato})"
     if type_navn:
         svar += f", type: {type_navn}"
+    if pause:
+        svar += f", pause: {pause['quantity']} x {pause['navn']}"
     return {"resultat": svar}
 
 
@@ -516,7 +555,10 @@ TOOLS = [
                            "Angiv sagsnummer + fra og til som klokkeslaet (HH:MM). Valgfrit: dato (YYYY-MM-DD, "
                            "default i dag), type (time-type som 'normal'/'overtid'), beskrivelse, medarbejder "
                            "(navn - default den der spoerger), pause_min (pause i minutter) og tillaeg. "
-                           "Pause og tillaeg noteres i beskrivelsen.",
+                           "pause_min registreres som RIGTIG pause (firmaets pause-typer). Tillaeg "
+                           "noteres i beskrivelsen. VIGTIGT: registrer ALDRIG samme tidsrum igen "
+                           "for at tilfoeje pause bagefter - bed i stedet brugeren rette linjen i "
+                           "ordrestyring (ellers opstaar dobbelt-linjer).",
             "parameters": {"type": "object", "properties": {
                 "sagsnummer": {"type": "string"}, "fra": {"type": "string"}, "til": {"type": "string"},
                 "dato": {"type": "string"}, "type": {"type": "string"},

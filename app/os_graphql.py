@@ -224,10 +224,16 @@ def describe_hour_input():
 
 # ---------- timeregistrering via GraphQL (v2 POST /hours er blokeret, se overlevering §8) ----------
 
-def create_hour(*, case_id, user_id, hour_type_id, start_time, stop_time, description=None):
+def pause_types():
+    """Firmaets pause-typer (fx Frokost, 30 min): [{id, name, minutes}]."""
+    return _gql("{ pauses { id name minutes } }").get("pauses") or []
+
+
+def create_hour(*, case_id, user_id, hour_type_id, start_time, stop_time,
+                description=None, pauses=None):
     """Opret en timelinje via GraphQL createHour. Tider er unix-sekunder.
     CreateHourInput: caseId Int, userId Int!, hourTypeId Int!, startTime Int!,
-    stopTime Int!, description String (+ pauses/additions, som vi ikke bruger endnu)."""
+    stopTime Int!, description String, pauses [PauseInput: pauseTypeId+quantity]."""
     felter = [
         f"userId: {int(user_id)}",
         f"hourTypeId: {int(hour_type_id)}",
@@ -238,6 +244,10 @@ def create_hour(*, case_id, user_id, hour_type_id, start_time, stop_time, descri
         felter.insert(0, f"caseId: {int(case_id)}")
     if description:
         felter.append(f'description: "{_q(description)}"')
+    if pauses:
+        p = ", ".join("{pauseTypeId: %d, quantity: %d}" % (int(x["pauseTypeId"]), int(x["quantity"]))
+                      for x in pauses)
+        felter.append(f"pauses: [{p}]")
     q = f'mutation {{ createHour(input: {{{", ".join(felter)}}}) {{ id }} }}'
     return _gql(q).get("createHour") or {}
 
