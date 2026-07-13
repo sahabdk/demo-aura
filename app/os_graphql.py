@@ -275,36 +275,43 @@ def _query_args(name):
 
 def documentation_count(case_number):
     """Antal filer i sagens DOKUMENTATION-fane (adskilt fra 'Dokumenter'/documentCount).
-    Bygger kaldet selv-opdagende ud fra query'ens argumenter + enum-vaerdier."""
+    Bygger kaldet helt selv-opdagende: enum-argumenter slaas op (CASE-varianten vaelges),
+    refId = sagens interne id, og retur-objektets skalar-felter selekteres automatisk."""
     cid = _case_internal_id(case_number)
     if not cid:
         return None
+    SKALARER = ("Int", "String", "Boolean", "Float", "ID")
     args = _query_args("documentationFileCount")
     dele = []
     for navn, ts in args.items():
         tn = ts.replace("!", "")
         kraevet = ts.endswith("!")
-        if tn == "DocumentationType":
-            vals = _enum_values("DocumentationType")
-            v = next((x for x in vals if "CASE" in x.upper()), vals[0] if vals else "CASE")
-            dele.append(f"{navn}: {v}")
-        elif tn == "DocumentationProvider":
-            vals = _enum_values("DocumentationProvider")
-            v = next((x for x in vals if any(w in x.upper() for w in
-                     ("INTERN", "ORDRE", "DEFAULT", "LOCAL", "STANDARD"))),
-                     vals[0] if vals else "INTERNAL")
-            dele.append(f"{navn}: {v}")
-        elif navn.lower() == "typeid":
-            dele.append(f'{navn}: "{cid}"')
-        elif kraevet and tn == "Int":
-            dele.append(f"{navn}: {int(cid)}")     # paakraevet Int uden kendt betydning = sagens id
-        elif kraevet and tn == "String":
-            dele.append(f'{navn}: "{cid}"')
-    q = f"{{ documentationFileCount({', '.join(dele)}) }}"
-    print(f"[documentation_count] args={args} -> {q[:250]}", flush=True)
-    val = _gql(q).get("documentationFileCount")
-    print(f"[documentation_count] resultat={val}", flush=True)
-    return val
+        if tn in SKALARER:
+            if kraevet:
+                dele.append(f'{navn}: "{cid}"' if tn in ("String", "ID") else f"{navn}: {int(cid)}")
+        else:
+            vals = _enum_values(tn)
+            if vals:
+                v = next((x for x in vals if "CASE" in x.upper()), vals[0])
+                dele.append(f"{navn}: {v}")
+    sel = ""
+    try:
+        _, retfelter = describe_type("DocumentationFolderFileCount")
+        felter = [k for k, v in retfelter.items() if v.replace("!", "") in SKALARER]
+        if felter:
+            sel = " { " + " ".join(felter) + " }"
+    except Exception:
+        pass
+    q = f"{{ documentationFileCount({', '.join(dele)}){sel} }}"
+    print(f"[documentation_count] {q[:250]}", flush=True)
+    res = _gql(q).get("documentationFileCount")
+    print(f"[documentation_count] resultat={res}", flush=True)
+    if isinstance(res, dict):
+        for k, v in res.items():   # foretraek et *count*-felt, ellers foerste heltal
+            if "count" in k.lower() and isinstance(v, int):
+                return v
+        return next((v for v in res.values() if isinstance(v, int)), None)
+    return res
 
 
 # ---------- samlet sag-overblik (til sag_status-vaerktoejet) ----------
@@ -313,7 +320,7 @@ def case_overview(case_number):
     """Skalar-felter + taellere fra sagen i ET opslag (dokumenter, timer, fakturaer m.m.)."""
     q = f'''{{ caseByCaseNumber(caseNumber: "{_q(str(case_number))}") {{
       id caseNumber description remarks workDone reference requisition orderNumber projectName
-      createdAt updatedAt documentCount hoursCount salesInvoicesCount schemasCount
+      createdAt updatedAt documentCount hoursCount salesInvoicesCount schemesCount
     }} }}'''
     return _gql(q).get("caseByCaseNumber") or {}
 
