@@ -515,15 +515,32 @@ def hours_raw():
     return _data(_req("GET", "/hours")) or []
 
 
-def register_hours(*, case_id, emp_id, start_time, stop_time, hour_type, remark=""):
-    """Opret en timelinje på en sag. Tider er unix-sekunder. Returnerer det oprettede objekt."""
-    body = {
-        "case_id": int(case_id),
+def register_hours(*, case_id, emp_id, start_time, stop_time, hour_type, remark="", case_number=None):
+    """Opret en timelinje på en sag. Tider er unix-sekunder.
+
+    GET /hours viser at systemet selv gemmer 'new_case_number' (sagsnummer, IKKE internt id)
+    og 'approval_status'. Vi prøver derfor flere felt-varianter og logger hver afvisning."""
+    base = {
         "emp_id": int(emp_id),
         "start_time": int(start_time),
         "stop_time": int(stop_time),
         "hour_type": int(hour_type),
     }
     if remark:
-        body["remark"] = remark
-    return _data(_req("POST", "/hours", json=body))
+        base["remark"] = remark
+    varianter = []
+    if case_number:
+        varianter.append({**base, "new_case_number": str(case_number), "approval_status": 1})
+        varianter.append({**base, "new_case_number": str(case_number)})
+    varianter.append({**base, "case_id": int(case_id), "approval_status": 1})
+    varianter.append({**base, "case_id": int(case_id)})
+    sidste = None
+    for i, body in enumerate(varianter, 1):
+        try:
+            res = _data(_req("POST", "/hours", json=body))
+            print(f"[register_hours] variant {i} ({sorted(body.keys())}) VIRKEDE", flush=True)
+            return res
+        except Exception as e:
+            sidste = e
+            print(f"[register_hours] variant {i} ({sorted(body.keys())}) fejlede: {str(e)[:200]}", flush=True)
+    raise sidste

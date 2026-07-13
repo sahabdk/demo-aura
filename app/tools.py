@@ -439,7 +439,7 @@ def registrer_timer(args, ctx):
     for ht in kandidater:
         try:
             os_api.register_hours(case_id=cid, emp_id=emp_id, start_time=start, stop_time=stop,
-                                  hour_type=ht, remark=remark)
+                                  hour_type=ht, remark=remark, case_number=sag)
             brugt = ht
             break
         except Exception as e:   # proev naeste type (baade rettigheds- og serverfejl paa en type)
