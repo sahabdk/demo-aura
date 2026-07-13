@@ -137,10 +137,9 @@ def add_case_material(case_number, identifier=None, quantity=1,
 
 # ---------- DEBUG: findes der timer-mutationer i GraphQL? ----------
 
-def find_hour_fields():
-    """Introspektér GraphQL-skemaet og find alle queries/mutationer der ligner timer
-    (hour/time/tid i navnet). Bruges til at afgøre om timeregistrering kan gå via
-    GraphQL i stedet for det blokerede v2 POST /hours."""
+def find_hour_fields(words=("hour", "time", "tid")):
+    """Introspektér GraphQL-skemaet og find alle queries/mutationer der matcher
+    soegeordene (default: timer-relaterede). Bruges til at udforske API'et."""
     q = "{ __schema { mutationType { fields { name } } queryType { fields { name } } } }"
     data = _gql(q)
 
@@ -148,9 +147,22 @@ def find_hour_fields():
         return [f.get("name") or "" for f in (((data.get("__schema") or {}).get(t) or {}).get("fields") or [])]
 
     alle = {"mutations": _names("mutationType"), "queries": _names("queryType")}
-    hits = {k: [x for x in v if any(w in x.lower() for w in ("hour", "time", "tid"))]
+    hits = {k: [x for x in v if any(w in x.lower() for w in words)]
             for k, v in alle.items()}
     return hits, alle
+
+
+def describe_type(name):
+    """Introspektér en vilkaarlig GraphQL-type: felter/inputfelter med typer."""
+    q = ('{ __type(name: "' + _q(name) + '") { kind name '
+         "fields { name type { kind name ofType { kind name ofType { kind name ofType { kind name } } } } } "
+         "inputFields { name type { kind name ofType { kind name ofType { kind name ofType { kind name } } } } } "
+         "} }")
+    t = _gql(q).get("__type") or {}
+    felter = {}
+    for f in (t.get("fields") or []) + (t.get("inputFields") or []):
+        felter[f.get("name")] = _ts(f.get("type"))
+    return t.get("kind"), felter
 
 
 def _ts(t):

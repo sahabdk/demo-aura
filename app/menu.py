@@ -291,6 +291,36 @@ def vis_graphql_timer(chat_id):
         f"(alle {len(alle.get('mutations') or [])} mutationer ligger i server-loggen)")
 
 
+def vis_graphql_soeg(chat_id, ord_):
+    """DEBUG: soeg i GraphQL-skemaet efter queries/mutationer der matcher et ord."""
+    from . import os_graphql as os_gql
+    try:
+        hits, _ = os_gql.find_hour_fields(words=(ord_.lower(),))
+    except Exception as e:
+        telegram.send_message(chat_id, f"GraphQL-soegning fejlede: {e}")
+        return
+    print(f"[vis_graphql_soeg] {ord_}: {hits}", flush=True)
+    telegram.send_message(chat_id, f"\U0001f527 GraphQL-felter der matcher '{ord_}':\n"
+                          f"Mutationer: {', '.join(hits.get('mutations') or []) or 'ingen'}\n"
+                          f"Queries: {', '.join(hits.get('queries') or []) or 'ingen'}")
+
+
+def vis_graphql_type(chat_id, navn):
+    """DEBUG: vis felterne paa en navngiven GraphQL-type (fx PauseType)."""
+    from . import os_graphql as os_gql
+    try:
+        kind, felter = os_gql.describe_type(navn)
+    except Exception as e:
+        telegram.send_message(chat_id, f"GraphQL-type-opslag fejlede: {e}")
+        return
+    print(f"[vis_graphql_type] {navn} ({kind}): {felter}", flush=True)
+    if not felter:
+        telegram.send_message(chat_id, f"Typen {navn} blev ikke fundet (husk store/smaa bogstaver).")
+        return
+    linjer = [f"- {k}: {v}" for k, v in felter.items()]
+    telegram.send_message(chat_id, (f"\U0001f527 {navn} ({kind}):\n" + "\n".join(linjer))[:3800])
+
+
 def vis_graphql_createhour(chat_id):
     """DEBUG: viser createHour-mutationens argumenter og input-felter."""
     import json as _json
@@ -317,6 +347,14 @@ def try_command(chat_id, telegram_id, text):
     t = (text or "").strip().lower()
     if t in ("/menu", "menu"):
         send_main_menu(chat_id)
+        return True
+    mg = re.search(r"graphql\s+s[o\u00f8]g\s+(\S+)", text or "", re.I)   # DEBUG: "vis graphql s\u00f8g pause"
+    if mg:
+        vis_graphql_soeg(chat_id, mg.group(1))
+        return True
+    mg = re.search(r"graphql\s+type\s+(\S+)", text or "", re.I)     # DEBUG: "vis graphql type PauseType"
+    if mg:
+        vis_graphql_type(chat_id, mg.group(1))
         return True
     if "createhour" in t.replace(" ", ""):   # DEBUG: "vis graphql createhour" - felter i mutationen
         vis_graphql_createhour(chat_id)
