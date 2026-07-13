@@ -192,6 +192,26 @@ def describe_hour_input():
     return args, detaljer
 
 
+# ---------- timeregistrering via GraphQL (v2 POST /hours er blokeret, se overlevering §8) ----------
+
+def create_hour(*, case_id, user_id, hour_type_id, start_time, stop_time, description=None):
+    """Opret en timelinje via GraphQL createHour. Tider er unix-sekunder.
+    CreateHourInput: caseId Int, userId Int!, hourTypeId Int!, startTime Int!,
+    stopTime Int!, description String (+ pauses/additions, som vi ikke bruger endnu)."""
+    felter = [
+        f"userId: {int(user_id)}",
+        f"hourTypeId: {int(hour_type_id)}",
+        f"startTime: {int(start_time)}",
+        f"stopTime: {int(stop_time)}",
+    ]
+    if case_id:
+        felter.insert(0, f"caseId: {int(case_id)}")
+    if description:
+        felter.append(f'description: "{_q(description)}"')
+    q = f'mutation {{ createHour(input: {{{", ".join(felter)}}}) {{ id }} }}'
+    return _gql(q).get("createHour") or {}
+
+
 # ---------- kontaktperson-kort (createContactPerson + link til sag) ----------
 
 def _case_and_customer_ids(case_number):

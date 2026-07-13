@@ -437,6 +437,16 @@ def registrer_timer(args, ctx):
         return {"fejl": "kunne ikke finde en time-type i ordrestyring"}
     brugt, fejl_pr_type = None, []
     for ht in kandidater:
+        # 1) GraphQL createHour (v2 POST /hours er blokeret paa API-noeglens rettigheder)
+        try:
+            os_gql.create_hour(case_id=cid, user_id=emp_id, hour_type_id=ht,
+                               start_time=start, stop_time=stop, description=remark or None)
+            brugt = ht
+            print(f"[registrer_timer] GraphQL createHour OK (hourTypeId {ht})", flush=True)
+            break
+        except Exception as eg:
+            print(f"[registrer_timer] GraphQL createHour fejlede (hourTypeId {ht}): {str(eg)[:200]}", flush=True)
+        # 2) fallback: v2 REST (virker den dag ordrestyring aabner noeglen)
         try:
             os_api.register_hours(case_id=cid, emp_id=emp_id, start_time=start, stop_time=stop,
                                   hour_type=ht, remark=remark, case_number=sag)
