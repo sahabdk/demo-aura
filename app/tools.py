@@ -435,17 +435,25 @@ def registrer_timer(args, ctx):
                 kandidater.append(tid)
     if not kandidater:
         return {"fejl": "kunne ikke finde en time-type i ordrestyring"}
-    brugt, sidste_fejl = None, None
+    brugt, fejl_pr_type = None, []
     for ht in kandidater:
         try:
             os_api.register_hours(case_id=cid, emp_id=emp_id, start_time=start, stop_time=stop,
                                   hour_type=ht, remark=remark)
             brugt = ht
             break
-        except Exception as e:
-            sidste_fejl = str(e)   # proev naeste type (baade rettigheds- og serverfejl paa en type)
+        except Exception as e:   # proev naeste type (baade rettigheds- og serverfejl paa en type)
+            t_navn = next((t.get("title") for t in typer if t.get("id") == ht), None) or f"id {ht}"
+            fejl_pr_type.append((t_navn, str(e)[:300]))
     if brugt is None:
-        return {"fejl": f"kunne ikke registrere timer paa nogen time-type: {sidste_fejl}"}
+        # Diagnostik: ens fejl paa ALLE typer peger paa medarbejder-rettigheder ("Relevante
+        # loen typer"); forskellige fejl peger paa felt-/API-problemer. Vis emp_id + case_id.
+        unikke = list(dict.fromkeys(f for _, f in fejl_pr_type))
+        if len(unikke) == 1:
+            detalje = f"samme fejl for alle {len(fejl_pr_type)} typer: {unikke[0]}"
+        else:
+            detalje = "; ".join(f"{n}: {f}" for n, f in fejl_pr_type)
+        return {"fejl": f"kunne ikke registrere timer (emp_id {emp_id}, sag-internt-id {cid}): {detalje}"}
     brutto = round((stop - start) / 3600, 2)
     type_navn = next((t.get("title") for t in typer if t.get("id") == brugt), "")
     svar = f"Registreret {brutto} timer paa sag {sag} ({fra}-{til} den {dato})"
