@@ -226,7 +226,13 @@ def describe_hour_input():
 
 def pause_types():
     """Firmaets pause-typer (fx Frokost, 30 min): [{id, name, minutes}]."""
-    return _gql("{ pauses { id name minutes } }").get("pauses") or []
+    try:
+        rows = _gql("{ pauses { id name minutes } }").get("pauses")
+    except Exception as e:
+        print(f"[pause_types] liste-form fejlede: {str(e)[:150]} - proever items-form", flush=True)
+        rows = (_gql("{ pauses { items { id name minutes } } }").get("pauses") or {}).get("items")
+    print(f"[pause_types] {rows}", flush=True)
+    return rows or []
 
 
 def create_hour(*, case_id, user_id, hour_type_id, start_time, stop_time,

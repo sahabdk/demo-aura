@@ -381,10 +381,12 @@ def _find_pause(pause_min):
     """Vaelg pause-type + antal ud fra oensket antal minutter (fx 60 -> 2 x Frokost a 30)."""
     try:
         typer = os_gql.pause_types()
-    except Exception:
+    except Exception as e:
+        print(f"[_find_pause] kunne ikke hente pause-typer: {str(e)[:200]}", flush=True)
         return None
     pm = int(pause_min)
     if pm <= 0 or not typer:
+        print(f"[_find_pause] ingen brugbare pause-typer (pm={pm}, typer={typer})", flush=True)
         return None
     bedst = None
     for pt in typer:
@@ -396,6 +398,8 @@ def _find_pause(pause_min):
                     "navn": pt.get("name") or "pause", "minutter": pm}
         if bedst is None or abs(m - pm) < abs(int(bedst.get("minutes") or 0) - pm):
             bedst = pt
+    if bedst is None:   # ingen type har varighed sat -> brug den foerste alligevel
+        bedst = next((pt for pt in typer if pt.get("id") is not None), None)
     if bedst:
         return {"pauseTypeId": int(bedst["id"]), "quantity": 1,
                 "navn": bedst.get("name") or "pause", "minutter": int(bedst.get("minutes") or 0)}
@@ -441,6 +445,7 @@ def registrer_timer(args, ctx):
             pause = _find_pause(int(args["pause_min"]))
         except (ValueError, TypeError):
             pause = None
+        print(f"[registrer_timer] pause_min={args.get('pause_min')} -> {pause}", flush=True)
         if pause and pause["minutter"] != int(args.get("pause_min") or 0):
             ekstra.append(f"pause oensket {args['pause_min']} min - registreret "
                           f"{pause['quantity']} x {pause['navn']} ({pause['minutter']} min)")
