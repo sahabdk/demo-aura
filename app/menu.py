@@ -228,6 +228,23 @@ def vis_medarbejdere(chat_id):
                           + "\n\nBrug id'et i SEED_USERS: telegram_id:navn:jun:ID")
 
 
+def vis_timetyper(chat_id):
+    """Lister ordrestyrings time-typer (Employee types) med id og om de er personlige."""
+    try:
+        typer = os_api.employee_types()
+    except Exception as e:
+        telegram.send_message(chat_id, f"Kunne ikke hente timetyper: {e}")
+        return
+    if not typer:
+        telegram.send_message(chat_id, "Ingen timetyper fundet i ordrestyring.")
+        return
+    linjer = []
+    for t in typer:
+        pers = " (personlig)" if t.get("is_personal") else ""
+        linjer.append(f"- {t.get('title') or '?'} (id: {t.get('id')}){pers}")
+    telegram.send_message(chat_id, "\u23f1 Timetyper i ordrestyring:\n" + "\n".join(linjer))
+
+
 # ---------- tekst/stemme-kommandoer ----------
 
 def try_command(chat_id, telegram_id, text):
@@ -252,6 +269,9 @@ def try_command(chat_id, telegram_id, text):
         return True
     if "medarbejder" in t and any(w in t for w in ("vis", "id", "liste", "list")):
         vis_medarbejdere(chat_id)
+        return True
+    if "timetyp" in t and any(w in t for w in ("vis", "list", "hvilke", "se")):
+        vis_timetyper(chat_id)
         return True
     if "send" not in t and "forfald" in t and any(w in t for w in ("faktura", "regning", "ubetalt")):
         vis_forfaldne(chat_id)

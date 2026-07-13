@@ -443,12 +443,9 @@ def registrer_timer(args, ctx):
             brugt = ht
             break
         except Exception as e:
-            sidste_fejl = str(e)
-            lav = sidste_fejl.lower()
-            if "timetype" not in lav and "lov til" not in lav:
-                break   # anden slags fejl -> stop, det hjaelper ikke at proeve flere typer
+            sidste_fejl = str(e)   # proev naeste type (baade rettigheds- og serverfejl paa en type)
     if brugt is None:
-        return {"fejl": f"kunne ikke registrere timer: {sidste_fejl}"}
+        return {"fejl": f"kunne ikke registrere timer paa nogen time-type: {sidste_fejl}"}
     brutto = round((stop - start) / 3600, 2)
     type_navn = next((t.get("title") for t in typer if t.get("id") == brugt), "")
     svar = f"Registreret {brutto} timer paa sag {sag} ({fra}-{til} den {dato})"
