@@ -178,16 +178,20 @@ def _ts(t):
 
 
 def describe_hour_input():
-    """Introspektér createHour-mutationens argumenter + inputtypens felter,
-    saa vi ved praecis hvad en GraphQL-timeregistrering skal indeholde."""
+    """Bagudkompatibel wrapper: createHour-mutationens argumenter + input-felter."""
+    return describe_mutation("createHour")
+
+
+def describe_mutation(name):
+    """Introspektér en vilkaarlig mutations argumenter + inputtypernes felter."""
     q1 = ("{ __schema { mutationType { fields { name args { name "
           "type { kind name ofType { kind name ofType { kind name ofType { kind name } } } } "
           "} } } } }")
     data = _gql(q1)
     fields = (((data.get("__schema") or {}).get("mutationType") or {}).get("fields")) or []
-    fld = next((f for f in fields if f.get("name") == "createHour"), None)
+    fld = next((f for f in fields if f.get("name") == name), None)
     if not fld:
-        raise RuntimeError("createHour findes ikke i skemaet")
+        raise RuntimeError(f"{name} findes ikke i skemaet")
     args = {a.get("name"): _ts(a.get("type")) for a in (fld.get("args") or [])}
     detaljer = {}
     for ts in args.values():

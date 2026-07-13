@@ -321,6 +321,24 @@ def vis_graphql_type(chat_id, navn):
     telegram.send_message(chat_id, (f"\U0001f527 {navn} ({kind}):\n" + "\n".join(linjer))[:3800])
 
 
+def vis_graphql_mutation(chat_id, navn):
+    """DEBUG: viser en vilkaarlig mutations argumenter og input-felter."""
+    import json as _json
+    from . import os_graphql as os_gql
+    try:
+        args, detaljer = os_gql.describe_mutation(navn)
+    except Exception as e:
+        telegram.send_message(chat_id, f"Introspektion fejlede: {e}")
+        return
+    print(f"[vis_graphql_mutation] {navn}: args={args} input={_json.dumps(detaljer, ensure_ascii=False)[:2500]}", flush=True)
+    linjer = [navn + "(" + ", ".join(f"{k}: {v}" for k, v in args.items()) + ")"]
+    for tn, felter in detaljer.items():
+        linjer.append(f"\n{tn}:")
+        for fn, ft in felter.items():
+            linjer.append(f"- {fn}: {ft}")
+    telegram.send_message(chat_id, ("\U0001f527 " + "\n".join(linjer))[:3800])
+
+
 def vis_graphql_createhour(chat_id):
     """DEBUG: viser createHour-mutationens argumenter og input-felter."""
     import json as _json
@@ -351,6 +369,10 @@ def try_command(chat_id, telegram_id, text):
     mg = re.search(r"graphql\s+s[o\u00f8]g\s+(\S+)", text or "", re.I)   # DEBUG: "vis graphql s\u00f8g pause"
     if mg:
         vis_graphql_soeg(chat_id, mg.group(1))
+        return True
+    mg = re.search(r"graphql\s+mutation\s+(\S+)", text or "", re.I)  # DEBUG: "vis graphql mutation uploadDocumentationFile"
+    if mg:
+        vis_graphql_mutation(chat_id, mg.group(1))
         return True
     mg = re.search(r"graphql\s+type\s+(\S+)", text or "", re.I)     # DEBUG: "vis graphql type PauseType"
     if mg:
