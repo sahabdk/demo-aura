@@ -339,6 +339,19 @@ def vis_graphql_mutation(chat_id, navn):
     telegram.send_message(chat_id, ("\U0001f527 " + "\n".join(linjer))[:3800])
 
 
+def vis_graphql_query(chat_id, navn):
+    """DEBUG: viser en vilkaarlig query's argumenter."""
+    from . import os_graphql as os_gql
+    try:
+        args = os_gql._query_args(navn)
+    except Exception as e:
+        telegram.send_message(chat_id, f"Introspektion fejlede: {e}")
+        return
+    print(f"[vis_graphql_query] {navn}: {args}", flush=True)
+    telegram.send_message(chat_id, f"\U0001f527 {navn}(" +
+                          ", ".join(f"{k}: {v}" for k, v in args.items()) + ")")
+
+
 def vis_graphql_createhour(chat_id):
     """DEBUG: viser createHour-mutationens argumenter og input-felter."""
     import json as _json
@@ -373,6 +386,10 @@ def try_command(chat_id, telegram_id, text):
     mg = re.search(r"graphql\s+mutation\s+(\S+)", text or "", re.I)  # DEBUG: "vis graphql mutation uploadDocumentationFile"
     if mg:
         vis_graphql_mutation(chat_id, mg.group(1))
+        return True
+    mg = re.search(r"graphql\s+query\s+(\S+)", text or "", re.I)     # DEBUG: "vis graphql query documentationFileCount"
+    if mg:
+        vis_graphql_query(chat_id, mg.group(1))
         return True
     mg = re.search(r"graphql\s+type\s+(\S+)", text or "", re.I)     # DEBUG: "vis graphql type PauseType"
     if mg:

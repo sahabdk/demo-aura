@@ -260,6 +260,53 @@ def create_hour(*, case_id, user_id, hour_type_id, start_time, stop_time,
     return _gql(q).get("createHour") or {}
 
 
+def _query_args(name):
+    """Introspektér en query's argumenter: {navn: type-streng}."""
+    q1 = ("{ __schema { queryType { fields { name args { name "
+          "type { kind name ofType { kind name ofType { kind name ofType { kind name } } } } "
+          "} } } } }")
+    data = _gql(q1)
+    fields = (((data.get("__schema") or {}).get("queryType") or {}).get("fields")) or []
+    fld = next((f for f in fields if f.get("name") == name), None)
+    if not fld:
+        raise RuntimeError(f"{name} findes ikke i skemaet")
+    return {a.get("name"): _ts(a.get("type")) for a in (fld.get("args") or [])}
+
+
+def documentation_count(case_number):
+    """Antal filer i sagens DOKUMENTATION-fane (adskilt fra 'Dokumenter'/documentCount).
+    Bygger kaldet selv-opdagende ud fra query'ens argumenter + enum-vaerdier."""
+    cid = _case_internal_id(case_number)
+    if not cid:
+        return None
+    args = _query_args("documentationFileCount")
+    dele = []
+    for navn, ts in args.items():
+        tn = ts.replace("!", "")
+        kraevet = ts.endswith("!")
+        if tn == "DocumentationType":
+            vals = _enum_values("DocumentationType")
+            v = next((x for x in vals if "CASE" in x.upper()), vals[0] if vals else "CASE")
+            dele.append(f"{navn}: {v}")
+        elif tn == "DocumentationProvider":
+            vals = _enum_values("DocumentationProvider")
+            v = next((x for x in vals if any(w in x.upper() for w in
+                     ("INTERN", "ORDRE", "DEFAULT", "LOCAL", "STANDARD"))),
+                     vals[0] if vals else "INTERNAL")
+            dele.append(f"{navn}: {v}")
+        elif navn.lower() == "typeid":
+            dele.append(f'{navn}: "{cid}"')
+        elif kraevet and tn == "Int":
+            dele.append(f"{navn}: {int(cid)}")     # paakraevet Int uden kendt betydning = sagens id
+        elif kraevet and tn == "String":
+            dele.append(f'{navn}: "{cid}"')
+    q = f"{{ documentationFileCount({', '.join(dele)}) }}"
+    print(f"[documentation_count] args={args} -> {q[:250]}", flush=True)
+    val = _gql(q).get("documentationFileCount")
+    print(f"[documentation_count] resultat={val}", flush=True)
+    return val
+
+
 # ---------- samlet sag-overblik (til sag_status-vaerktoejet) ----------
 
 def case_overview(case_number):

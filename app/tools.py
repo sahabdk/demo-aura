@@ -563,7 +563,15 @@ def sag_status(args, ctx):
     except Exception:
         pass
     ansvarlig = os_api.user_name(case.get("main_technician")) if case.get("main_technician") else None
-    antal_dok = gql.get("documentCount")
+    antal_dok = None
+    try:
+        antal_dok = os_gql.documentation_count(sag)   # Dokumentation-fanen (Auras fotos m.m.)
+    except Exception as e:
+        print(f"[sag_status] dokumentation-taeller fejlede: {str(e)[:200]}", flush=True)
+    if antal_dok is None:
+        antal_dok = gql.get("documentCount")
+    else:
+        antal_dok = (antal_dok or 0) + (gql.get("documentCount") or 0)
     antal_timer = len(timer) or (gql.get("hoursCount") or 0)
     status = {
         "sagsnummer": sag,
