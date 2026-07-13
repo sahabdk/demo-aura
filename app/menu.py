@@ -291,6 +291,25 @@ def vis_graphql_timer(chat_id):
         f"(alle {len(alle.get('mutations') or [])} mutationer ligger i server-loggen)")
 
 
+def vis_graphql_createhour(chat_id):
+    """DEBUG: viser createHour-mutationens argumenter og input-felter."""
+    import json as _json
+    from . import os_graphql as os_gql
+    try:
+        args, detaljer = os_gql.describe_hour_input()
+    except Exception as e:
+        telegram.send_message(chat_id, f"Introspektion fejlede: {e}")
+        return
+    print(f"[vis_graphql_createhour] args={args}", flush=True)
+    print(f"[vis_graphql_createhour] input={_json.dumps(detaljer, ensure_ascii=False)[:3000]}", flush=True)
+    linjer = ["createHour(" + ", ".join(f"{k}: {v}" for k, v in args.items()) + ")"]
+    for tn, felter in detaljer.items():
+        linjer.append(f"\n{tn}:")
+        for fn, ft in felter.items():
+            linjer.append(f"- {fn}: {ft}")
+    telegram.send_message(chat_id, ("🔧 " + "\n".join(linjer))[:3800])
+
+
 # ---------- tekst/stemme-kommandoer ----------
 
 def try_command(chat_id, telegram_id, text):
@@ -298,6 +317,9 @@ def try_command(chat_id, telegram_id, text):
     t = (text or "").strip().lower()
     if t in ("/menu", "menu"):
         send_main_menu(chat_id)
+        return True
+    if "createhour" in t.replace(" ", ""):   # DEBUG: "vis graphql createhour" - felter i mutationen
+        vis_graphql_createhour(chat_id)
         return True
     if "graphql" in t and "timer" in t:   # DEBUG: "vis graphql timer" - findes timer-mutationer?
         vis_graphql_timer(chat_id)

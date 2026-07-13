@@ -153,6 +153,45 @@ def find_hour_fields():
     return hits, alle
 
 
+def _ts(t):
+    """GraphQL-type -> laesbar streng, fx Int!, [String], CreateHourInput!"""
+    if not t:
+        return "?"
+    k = t.get("kind")
+    if k == "NON_NULL":
+        return _ts(t.get("ofType")) + "!"
+    if k == "LIST":
+        return "[" + _ts(t.get("ofType")) + "]"
+    return t.get("name") or "?"
+
+
+def describe_hour_input():
+    """Introspektér createHour-mutationens argumenter + inputtypens felter,
+    saa vi ved praecis hvad en GraphQL-timeregistrering skal indeholde."""
+    q1 = ("{ __schema { mutationType { fields { name args { name "
+          "type { kind name ofType { kind name ofType { kind name ofType { kind name } } } } "
+          "} } } } }")
+    data = _gql(q1)
+    fields = (((data.get("__schema") or {}).get("mutationType") or {}).get("fields")) or []
+    fld = next((f for f in fields if f.get("name") == "createHour"), None)
+    if not fld:
+        raise RuntimeError("createHour findes ikke i skemaet")
+    args = {a.get("name"): _ts(a.get("type")) for a in (fld.get("args") or [])}
+    detaljer = {}
+    for ts in args.values():
+        tn = ts.replace("!", "").replace("[", "").replace("]", "")
+        q2 = ('{ __type(name: "' + tn + '") { kind inputFields { name '
+              "type { kind name ofType { kind name ofType { kind name ofType { kind name } } } } "
+              "} } }")
+        try:
+            t = _gql(q2).get("__type") or {}
+        except Exception:
+            continue
+        if t.get("inputFields"):
+            detaljer[tn] = {f.get("name"): _ts(f.get("type")) for f in t["inputFields"]}
+    return args, detaljer
+
+
 # ---------- kontaktperson-kort (createContactPerson + link til sag) ----------
 
 def _case_and_customer_ids(case_number):
