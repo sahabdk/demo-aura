@@ -21,7 +21,13 @@ def _gql(query: str, variables=None):
     except ValueError:
         raise RuntimeError(f"GraphQL svarede ikke JSON ({r.status_code})")
     if data.get("errors"):
-        raise RuntimeError(str(data["errors"][0].get("message", "GraphQL-fejl"))[:200])
+        import json as _json
+        e0 = data["errors"][0]
+        besked = str(e0.get("message", "GraphQL-fejl"))
+        ekstra = e0.get("extensions")
+        if ekstra:   # fx valideringsdetaljer: hvilket felt og hvorfor
+            besked += " | " + _json.dumps(ekstra, ensure_ascii=False)[:400]
+        raise RuntimeError(besked[:600])
     return data.get("data") or {}
 
 
