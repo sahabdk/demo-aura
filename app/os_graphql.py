@@ -320,6 +320,31 @@ def documentation_count(case_number):
     return res
 
 
+# ---------- fortryd: slet objekter Aura selv har oprettet ----------
+
+def _delete(mutation, obj_id):
+    """Kør en delete-mutation robust (med/uden selektion alt efter retur-typen)."""
+    q = f"mutation {{ {mutation}(id: {int(obj_id)}) }}"
+    try:
+        return _gql(q)
+    except RuntimeError as e:
+        if "selection" in str(e).lower() or "must have" in str(e).lower():
+            return _gql(f"mutation {{ {mutation}(id: {int(obj_id)}) {{ id }} }}")
+        raise
+
+
+def delete_hour(hour_id):
+    return _delete("deleteHour", hour_id)
+
+
+def delete_case_material(material_id):
+    return _delete("deleteCaseMaterial", material_id)
+
+
+def delete_documentation_file(file_id):
+    return _delete("deleteDocumentationFile", file_id)
+
+
 # ---------- samlet sag-overblik (til sag_status-vaerktoejet) ----------
 
 def case_overview(case_number):

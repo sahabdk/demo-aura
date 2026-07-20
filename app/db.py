@@ -52,7 +52,10 @@ def init_db():
                 navn        TEXT,
                 rolle       TEXT,
                 handling    TEXT NOT NULL,
-                detaljer    TEXT
+                detaljer    TEXT,
+                ref_type    TEXT,                          -- 'hour'|'material'|'dokument' (til fortryd)
+                ref_id      TEXT,                          -- objektets id i ordrestyring
+                fortrudt    INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS meta (
                 k TEXT PRIMARY KEY,
@@ -76,6 +79,12 @@ def init_db():
             c.execute("ALTER TABLE brugere ADD COLUMN os_user_id TEXT")
         except sqlite3.OperationalError:
             pass
+        # Migration: fortryd-kolonner på handlinger
+        for kol in ("ref_type TEXT", "ref_id TEXT", "fortrudt INTEGER NOT NULL DEFAULT 0"):
+            try:
+                c.execute(f"ALTER TABLE handlinger ADD COLUMN {kol}")
+            except sqlite3.OperationalError:
+                pass
 
 
 # ---- Brugere / roller ----
@@ -237,14 +246,21 @@ def save_message(telegram_id, rolle, indhold):
 
 # ---- Handlingslog (leder-kontrol: hvad har Aura udført?) ----
 
-def log_handling(telegram_id, navn, rolle, handling, detaljer=""):
+def log_handling(telegram_id, navn, rolle, handling, detaljer="", ref_type=None, ref_id=None):
     """Registrér en udført handling. Må ALDRIG vælte den egentlige handling -> try/except hos kalderen."""
     with conn() as c:
         c.execute(
-            "INSERT INTO handlinger(ts, telegram_id, navn, rolle, handling, detaljer) VALUES(?,?,?,?,?,?)",
+            "INSERT INTO handlinger(ts, telegram_id, navn, rolle, handling, detaljer, ref_type, ref_id) "
+            "VALUES(?,?,?,?,?,?,?,?)",
             (datetime.now().isoformat(timespec="seconds"), str(telegram_id or ""),
-             navn or "", rolle or "", handling, (detaljer or "")[:400]),
+             navn or "", rolle or "", handling, (detaljer or "")[:400],
+             ref_type, str(ref_id) if ref_id is not None else None),
         )
+
+
+def marker_fortrudt(handling_id):
+    with conn() as c:
+        c.execute("UPDATE handlinger SET fortrudt=1 WHERE id=?", (int(handling_id),))
 
 
 def handlinger_seneste(antal=30, dato=None):

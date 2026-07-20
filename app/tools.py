@@ -340,7 +340,7 @@ def tilfoej_vare(args, ctx):
     if afvist:
         return afvist
     try:
-        os_gql.add_case_material(
+        _mat = os_gql.add_case_material(
             args["sagsnummer"],
             identifier=args.get("vare_id"),
             quantity=args.get("antal", 1),
@@ -351,7 +351,10 @@ def tilfoej_vare(args, ctx):
         return {"fejl": f"kunne ikke lægge varen på sagen: {e}"}
     antal = args.get("antal", 1)
     navn = args.get("beskrivelse") or args.get("varenummer") or "varen"
-    return {"resultat": f"Lagt på sag {args['sagsnummer']}: {navn} × {antal}"}
+    ud = {"resultat": f"Lagt på sag {args['sagsnummer']}: {navn} × {antal}"}
+    if (_mat or {}).get("id"):
+        ud["_ref"] = {"type": "material", "id": _mat["id"]}
+    return ud
 
 
 def _unix_ts(dato, hhmm):
@@ -475,24 +478,24 @@ def registrer_timer(args, ctx):
                 kandidater.append(tid)
     if not kandidater:
         return {"fejl": "kunne ikke finde en time-type i ordrestyring"}
-    brugt, fejl_pr_type = None, []
+    brugt, fejl_pr_type, oprettet_id = None, [], None
     for ht in kandidater:
         # 1) GraphQL createHour (v2 POST /hours er blokeret paa API-noeglens rettigheder)
         try:
-            os_gql.create_hour(case_id=cid, user_id=emp_id, hour_type_id=ht,
+            _ch = os_gql.create_hour(case_id=cid, user_id=emp_id, hour_type_id=ht,
                                start_time=start, stop_time=stop, description=remark or None,
                                pauses=[{"pauseTypeId": pause["pauseTypeId"],
                                         "quantity": pause["quantity"]}] if pause else None)
-            brugt = ht
-            print(f"[registrer_timer] GraphQL createHour OK (hourTypeId {ht})", flush=True)
+            brugt, oprettet_id = ht, (_ch or {}).get("id")
+            print(f"[registrer_timer] GraphQL createHour OK (hourTypeId {ht}, id {oprettet_id})", flush=True)
             break
         except Exception as eg:
             print(f"[registrer_timer] GraphQL createHour fejlede (hourTypeId {ht}): {str(eg)[:200]}", flush=True)
         # 2) fallback: v2 REST (virker den dag ordrestyring aabner noeglen)
         try:
-            os_api.register_hours(case_id=cid, emp_id=emp_id, start_time=start, stop_time=stop,
+            _rh = os_api.register_hours(case_id=cid, emp_id=emp_id, start_time=start, stop_time=stop,
                                   hour_type=ht, remark=remark, case_number=sag)
-            brugt = ht
+            brugt, oprettet_id = ht, (_rh or {}).get("id")
             break
         except Exception as e:   # proev naeste type (baade rettigheds- og serverfejl paa en type)
             t_navn = next((t.get("title") for t in typer if t.get("id") == ht), None) or f"id {ht}"
@@ -515,7 +518,10 @@ def registrer_timer(args, ctx):
         svar += f", type: {type_navn}"
     if pause:
         svar += f", pause: {pause['quantity']} x {pause['navn']}"
-    return {"resultat": svar}
+    ud = {"resultat": svar}
+    if oprettet_id:
+        ud["_ref"] = {"type": "hour", "id": oprettet_id}
+    return ud
 
 
 def vis_raa_timer(args, ctx):
@@ -620,6 +626,51 @@ def vis_handlinger(args, ctx):
         for r in rows]}
 
 
+def fortryd_handling(args, ctx):
+    """Fortryd Auras seneste handling (timer/vare/foto). Leder maa fortryde alt;
+    medarbejder kun egne handlinger. Valgfrit: sagsnummer og/eller type."""
+    sag = str(args.get("sagsnummer") or "").strip()
+    typ = (args.get("type") or "").strip().lower()[:3]   # 'tim'|'var'|'fot'
+    DTYPE = {"hour": "timeregistrering", "material": "vare", "dokument": "foto"}
+    kandidat = None
+    for r in db.handlinger_seneste(antal=100):
+        if not r.get("ref_id") or r.get("fortrudt"):
+            continue
+        if ctx.get("rolle") != "pro" and str(r.get("telegram_id")) != str(ctx.get("telegram_id")):
+            continue
+        dnavn = DTYPE.get(r.get("ref_type") or "")
+        if not dnavn:
+            continue
+        if typ and not (dnavn.startswith(typ) or (typ == "tim" and r.get("ref_type") == "hour")):
+            continue
+        if sag and f'"{sag}"' not in (r.get("detaljer") or "") and f"sag {sag}" not in (r.get("detaljer") or ""):
+            continue
+        kandidat = r
+        break
+    if not kandidat:
+        return {"resultat": "Jeg fandt ingen handling der kan fortrydes. Kun timeregistreringer, "
+                            "varer og fotos som Aura selv har oprettet, kan fortrydes."}
+    rt, rid = kandidat["ref_type"], kandidat["ref_id"]
+    try:
+        if rt == "hour":
+            os_gql.delete_hour(rid)
+        elif rt == "material":
+            os_gql.delete_case_material(rid)
+        elif rt == "dokument":
+            os_gql.delete_documentation_file(rid)
+    except Exception as e:
+        print(f"[fortryd] {rt} {rid} fejlede: {str(e)[:250]}", flush=True)
+        return {"fejl": f"kunne ikke fortryde ({DTYPE.get(rt)}): {str(e)[:150]}"}
+    db.marker_fortrudt(kandidat["id"])
+    try:
+        db.log_handling(ctx.get("telegram_id"), ctx.get("navn"), ctx.get("rolle"),
+                        "handling fortrudt", f"{kandidat['handling']}: {(kandidat.get('detaljer') or '')[:200]}")
+    except Exception:
+        pass
+    return {"resultat": f"Fortrudt: {kandidat['handling']} ({(kandidat.get('detaljer') or '')[:150]}). "
+                        f"Oprindeligt udført af {kandidat.get('navn') or 'ukendt'} kl. {(kandidat.get('ts') or '')[11:16]}."}
+
+
 # ---------- registry: skema + funktion + tilladte roller ----------
 
 TOOLS = [
@@ -652,6 +703,20 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": fortryd_handling, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "fortryd_handling",
+            "description": "Fortryd/annullér Auras seneste handling: sletter den timeregistrering, "
+                           "vare eller det foto Aura selv har oprettet. Brug ved 'fortryd', 'slet den "
+                           "sidste registrering', 'det var en fejl, fjern den igen'. Valgfrit: "
+                           "sagsnummer og type ('timer'/'vare'/'foto') for at ramme praecist. "
+                           "Medarbejdere kan kun fortryde egne handlinger.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}, "type": {"type": "string"}},
+                "required": []},
         }},
     },
     {
@@ -892,11 +957,13 @@ def call_tool(name: str, args: dict, ctx: dict):
         res = tool["func"](args, ctx)
     except Exception as e:  # ægte fejl -> agenten fortæller ærligt at det fejlede
         return {"fejl": str(e)}
+    ref = res.pop("_ref", None) if isinstance(res, dict) else None
     if name in MUTERENDE and isinstance(res, dict) and not res.get("fejl"):
         try:
             import json as _json
             db.log_handling(ctx.get("telegram_id"), ctx.get("navn"), ctx.get("rolle"),
-                            MUTERENDE[name], _json.dumps(args, ensure_ascii=False)[:350])
+                            MUTERENDE[name], _json.dumps(args, ensure_ascii=False)[:350],
+                            ref_type=(ref or {}).get("type"), ref_id=(ref or {}).get("id"))
         except Exception:
             pass   # log-fejl må aldrig vælte selve handlingen
     return res
