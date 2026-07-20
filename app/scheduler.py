@@ -113,7 +113,7 @@ def start_scheduler():
     sch.add_job(soon_reminders, "cron", minute="*/5")   # hele døgnet, alle dage
     sch.add_job(faktura_overview, "cron", day_of_week="mon", hour=8, minute=0)
     sch.add_job(reference_scan, "cron", day_of_week="mon-fri", hour="7-18", minute=0)  # hver hele time i arbejdstiden
-    sch.add_job(status_vagt, "cron", minute=10)   # hver time: Åben -> Igangværende når planlagt tid er nået
+    sch.add_job(status_vagt, "cron", minute="*/15")   # hvert 15. min: Åben -> Igangværende når planlagt tid er nået
     sch.start()
     log.info("scheduler kører")
     return sch
