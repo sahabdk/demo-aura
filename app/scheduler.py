@@ -93,8 +93,17 @@ def status_vagt():
             return
         from . import os_graphql as os_gql
         nu = int(_t.time())
+        MAX_SKIFT = 15   # sikkerhedsloft: vagten maa aldrig skifte flere sager i EN koersel
         skiftet = []
         for c in os_api.cases_paged():
+            if len(skiftet) >= MAX_SKIFT:
+                print(f"[status_vagt] STOP: naaede loftet paa {MAX_SKIFT} skift i en koersel", flush=True)
+                if LEADER_GROUP_CHAT_ID:
+                    telegram.send_message(LEADER_GROUP_CHAT_ID,
+                                          f"⚠️ Status-vagten stoppede efter {MAX_SKIFT} automatiske skift i én "
+                                          "kørsel (sikkerhedsloft). Tjek at planlægningen ser rigtig ud — resten "
+                                          "tages i næste kørsel.")
+                break
             if str(c.get("status")) != str(aaben_id):
                 continue
             nr = c.get("case_number")

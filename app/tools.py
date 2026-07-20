@@ -956,6 +956,31 @@ def call_tool(name: str, args: dict, ctx: dict):
     if (name in MUTERENDE or name == "fortryd_handling") and db.get_meta("aura_pauseret") == "1":
         return {"resultat": "Aura er sat på pause af lederen, så jeg må ikke udføre ændringer lige nu. "
                             "Læsning og søgning virker stadig. Lederen starter mig igen med 'aura start'."}
+    # LØBSK-BREMSE: for mange ændringer fra én bruger på kort tid -> Aura pauser sig selv
+    if name in MUTERENDE:
+        try:
+            MAX_PR_TIME = 15
+            n = db.antal_handlinger_seneste_time(ctx.get("telegram_id"))
+            if n >= MAX_PR_TIME:
+                db.set_meta("aura_pauseret", "1")
+                db.log_handling(ctx.get("telegram_id"), ctx.get("navn"), ctx.get("rolle"),
+                                "LØBSK-BREMSE udløst", f"{n} ændringer på 1 time -> Aura pauset")
+                print(f"[bremse] {ctx.get('navn')} naaede {n} aendringer/time -> pause", flush=True)
+                try:
+                    from .config import LEADER_GROUP_CHAT_ID
+                    from . import telegram as _tg
+                    if LEADER_GROUP_CHAT_ID:
+                        _tg.send_message(LEADER_GROUP_CHAT_ID,
+                                         f"🛑 Aura har sat sig selv på pause: {ctx.get('navn')} har lavet "
+                                         f"{n} ændringer på 1 time (grænse {MAX_PR_TIME}). Tjek handlingsloggen "
+                                         "og skriv 'aura start' for at fortsætte.")
+                except Exception:
+                    pass
+                return {"resultat": "Jeg har sat mig selv på pause som sikkerhed: der er lavet usædvanligt "
+                                    "mange ændringer på kort tid. Lederen er informeret og kan starte mig "
+                                    "igen med 'aura start'."}
+        except Exception:
+            pass   # bremse-fejl må aldrig blokere normal drift
     try:
         res = tool["func"](args, ctx)
     except Exception as e:  # ægte fejl -> agenten fortæller ærligt at det fejlede

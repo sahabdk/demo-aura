@@ -258,6 +258,18 @@ def log_handling(telegram_id, navn, rolle, handling, detaljer="", ref_type=None,
         )
 
 
+def antal_handlinger_seneste_time(telegram_id):
+    """Antal ændrende handlinger fra én bruger den seneste time (til løbsk-bremsen)."""
+    from datetime import timedelta
+    graense = (datetime.now() - timedelta(hours=1)).isoformat(timespec="seconds")
+    with conn() as c:
+        row = c.execute(
+            "SELECT COUNT(*) AS n FROM handlinger WHERE telegram_id=? AND ts>=? "
+            "AND handling NOT IN ('Aura sat på pause', 'Aura startet igen')",
+            (str(telegram_id or ""), graense)).fetchone()
+        return int(row["n"] if row else 0)
+
+
 def marker_fortrudt(handling_id):
     with conn() as c:
         c.execute("UPDATE handlinger SET fortrudt=1 WHERE id=?", (int(handling_id),))
