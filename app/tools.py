@@ -606,6 +606,20 @@ def sag_status(args, ctx):
     return status
 
 
+def vis_handlinger(args, ctx):
+    """Handlingsloggen (kun leder): hvad Aura har udfoert, af hvem og hvornaar."""
+    dato = (args.get("dato") or "").strip() or None
+    try:
+        antal = min(100, int(args.get("antal") or 30))
+    except (ValueError, TypeError):
+        antal = 30
+    rows = db.handlinger_seneste(antal=antal, dato=dato)
+    return {"antal": len(rows), "handlinger": [
+        {"tid": r.get("ts"), "bruger": r.get("navn") or "Aura (automatisk)",
+         "handling": r.get("handling"), "detaljer": r.get("detaljer")}
+        for r in rows]}
+
+
 # ---------- registry: skema + funktion + tilladte roller ----------
 
 TOOLS = [
@@ -638,6 +652,20 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": vis_handlinger, "roles": {"pro"},
+        "schema": {"type": "function", "function": {
+            "name": "vis_handlinger",
+            "description": "Handlingslog (kun leder): liste over alt Aura har udfoert (timer, sager, "
+                           "varer, fotos, rykkere, automatiske statusskift) med bruger og tidspunkt. "
+                           "Brug ved 'hvad har du lavet i dag', 'vis handlingsloggen', 'hvad er der "
+                           "sket', 'hvem registrerede timer paa sag X'. Valgfrit: dato (YYYY-MM-DD), "
+                           "antal (default 30).",
+            "parameters": {"type": "object", "properties": {
+                "dato": {"type": "string"}, "antal": {"type": "integer"}},
+                "required": []},
         }},
     },
     {
@@ -843,6 +871,17 @@ def schemas_for_role(rolle: str):
     return [t["schema"] for t in TOOLS if rolle in t["roles"]]
 
 
+# Ændrende værktøjer der skal i handlingsloggen (læse-værktøjer logges ikke)
+MUTERENDE = {
+    "opret_kunde": "kunde oprettet", "opdater_kunde": "kunde opdateret",
+    "opret_sag": "sag oprettet", "opdater_sag": "sag opdateret",
+    "skriv_bemaerkning": "bemærkning skrevet", "afslut_sag": "sag færdigmeldt",
+    "registrer_timer": "timer registreret", "tilfoej_vare": "vare tilføjet",
+    "send_paamindelse_email": "rykker sendt", "saet_rykker_niveau": "rykker-tæller sat",
+    "husk_aftale": "aftale gemt",
+}
+
+
 def call_tool(name: str, args: dict, ctx: dict):
     tool = BY_NAME.get(name)
     if not tool:
@@ -850,7 +889,15 @@ def call_tool(name: str, args: dict, ctx: dict):
     if ctx["rolle"] not in tool["roles"]:
         return {"fejl": "afvist: kun lederen kan bruge denne funktion"}
     try:
-        return tool["func"](args, ctx)
+        res = tool["func"](args, ctx)
     except Exception as e:  # ægte fejl -> agenten fortæller ærligt at det fejlede
         return {"fejl": str(e)}
+    if name in MUTERENDE and isinstance(res, dict) and not res.get("fejl"):
+        try:
+            import json as _json
+            db.log_handling(ctx.get("telegram_id"), ctx.get("navn"), ctx.get("rolle"),
+                            MUTERENDE[name], _json.dumps(args, ensure_ascii=False)[:350])
+        except Exception:
+            pass   # log-fejl må aldrig vælte selve handlingen
+    return res
 # slut

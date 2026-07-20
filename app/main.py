@@ -133,6 +133,11 @@ async def telegram_webhook(secret: str, request: Request):
                 from .config import now_local
                 navn = f"aura_{now_local().strftime('%Y%m%d_%H%M%S')}.jpg"
                 os_gql.upload_case_document(sag, navn, data, description=caption)
+                try:
+                    db.log_handling(from_id, user["navn"], user["rolle"],
+                                    "foto gemt på sag", f"sag {sag}: {navn}")
+                except Exception:
+                    pass
                 telegram.send_message(chat["id"], f"📎 Billedet er gemt under Dokumentation på sag {sag}.")
             except Exception as e:
                 log.exception("dokument-upload-fejl")

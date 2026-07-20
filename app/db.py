@@ -45,6 +45,15 @@ def init_db():
                 indhold     TEXT NOT NULL,
                 ts          DATETIME DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS handlinger (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts          TEXT NOT NULL,                 -- lokal tid, ISO
+                telegram_id TEXT,
+                navn        TEXT,
+                rolle       TEXT,
+                handling    TEXT NOT NULL,
+                detaljer    TEXT
+            );
             CREATE TABLE IF NOT EXISTS meta (
                 k TEXT PRIMARY KEY,
                 v TEXT
@@ -224,6 +233,31 @@ def save_message(telegram_id, rolle, indhold):
             "INSERT INTO samtaler(telegram_id, rolle, indhold) VALUES(?,?,?)",
             (str(telegram_id), rolle, indhold),
         )
+
+
+# ---- Handlingslog (leder-kontrol: hvad har Aura udført?) ----
+
+def log_handling(telegram_id, navn, rolle, handling, detaljer=""):
+    """Registrér en udført handling. Må ALDRIG vælte den egentlige handling -> try/except hos kalderen."""
+    with conn() as c:
+        c.execute(
+            "INSERT INTO handlinger(ts, telegram_id, navn, rolle, handling, detaljer) VALUES(?,?,?,?,?,?)",
+            (datetime.now().isoformat(timespec="seconds"), str(telegram_id or ""),
+             navn or "", rolle or "", handling, (detaljer or "")[:400]),
+        )
+
+
+def handlinger_seneste(antal=30, dato=None):
+    """Seneste handlinger, nyeste først. dato='YYYY-MM-DD' begrænser til én dag."""
+    with conn() as c:
+        if dato:
+            rows = c.execute(
+                "SELECT * FROM handlinger WHERE substr(ts,1,10)=? ORDER BY ts DESC LIMIT ?",
+                (dato, int(antal))).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM handlinger ORDER BY ts DESC LIMIT ?", (int(antal),)).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ---- Meta (nøgle/værdi) + "sidst sete ordre" ----

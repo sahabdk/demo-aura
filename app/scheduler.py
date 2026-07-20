@@ -105,6 +105,11 @@ def status_vagt():
                     os_api.set_case_status(nr, igang_id)
                     skiftet.append(str(nr))
                     print(f"[status_vagt] sag {nr} -> Igangværende (planlagt tid nået)", flush=True)
+                    try:
+                        db.log_handling("", "Aura (automatisk)", "system",
+                                        "status skiftet til Igangværende", f"sag {nr} (planlagt tid nået)")
+                    except Exception:
+                        pass
                 except Exception as e:
                     print(f"[status_vagt] kunne ikke skifte sag {nr}: {str(e)[:150]}", flush=True)
         if skiftet and LEADER_GROUP_CHAT_ID:

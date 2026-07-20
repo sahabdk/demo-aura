@@ -164,6 +164,10 @@ def vis_tildel(chat_id, message_id, case_number):
 def saet_ansvarlig(chat_id, message_id, case_number, tech_id):
     os_api.assign_case(case_number, tech_id)
     navn = os_api.user_name(tech_id) or "medarbejder"
+    try:
+        db.log_handling("", "leder (knap)", "pro", "sag tildelt", f"sag {case_number} -> {navn}")
+    except Exception:
+        pass
     telegram.edit_message(chat_id, message_id, f"✅ Sag {case_number} tildelt {navn}.",
                           [[("📋 Detaljer", f"det:{case_number}")]])
 
