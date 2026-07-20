@@ -390,6 +390,23 @@ def try_command(chat_id, telegram_id, text):
     if t in ("/menu", "menu"):
         send_main_menu(chat_id)
         return True
+    if t in ("aura stop", "stop aura", "aura pause", "pause aura"):
+        db.set_meta("aura_pauseret", "1")
+        try:
+            db.log_handling("", "leder", "pro", "Aura sat på pause", "alle ændringer blokeret")
+        except Exception:
+            pass
+        telegram.send_message(chat_id, "⏸ Aura er sat på pause: alle ændringer er blokeret, "
+                                       "indtil du skriver 'aura start'. Læsning og søgning virker stadig.")
+        return True
+    if t in ("aura start", "start aura", "aura kør", "aura koer"):
+        db.set_meta("aura_pauseret", "0")
+        try:
+            db.log_handling("", "leder", "pro", "Aura startet igen", "")
+        except Exception:
+            pass
+        telegram.send_message(chat_id, "▶️ Aura kører igen — alle funktioner er åbne.")
+        return True
     mg = re.search(r"graphql\s+s[o\u00f8]g\s+(\S+)", text or "", re.I)   # DEBUG: "vis graphql s\u00f8g pause"
     if mg:
         vis_graphql_soeg(chat_id, mg.group(1))

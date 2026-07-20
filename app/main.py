@@ -121,6 +121,10 @@ async def telegram_webhook(secret: str, request: Request):
             return {"ok": True}
         if vil_gemme and m_sag:
             # Upload til sagens Dokumentation-fane (jun maa kun paa egne sager)
+            if db.get_meta("aura_pauseret") == "1":
+                telegram.send_message(chat["id"], "⏸ Aura er sat på pause af lederen — jeg må ikke "
+                                                  "gemme noget lige nu.")
+                return {"ok": True}
             sag = m_sag.group(1)
             from . import tools as _tools
             afvist = _tools._ejer_eller_afvis(sag, {"telegram_id": from_id, "navn": user["navn"],

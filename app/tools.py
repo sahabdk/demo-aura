@@ -953,6 +953,9 @@ def call_tool(name: str, args: dict, ctx: dict):
         return {"fejl": f"ukendt værktøj {name}"}
     if ctx["rolle"] not in tool["roles"]:
         return {"fejl": "afvist: kun lederen kan bruge denne funktion"}
+    if (name in MUTERENDE or name == "fortryd_handling") and db.get_meta("aura_pauseret") == "1":
+        return {"resultat": "Aura er sat på pause af lederen, så jeg må ikke udføre ændringer lige nu. "
+                            "Læsning og søgning virker stadig. Lederen starter mig igen med 'aura start'."}
     try:
         res = tool["func"](args, ctx)
     except Exception as e:  # ægte fejl -> agenten fortæller ærligt at det fejlede

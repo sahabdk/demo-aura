@@ -79,6 +79,9 @@ def status_vagt():
     """Hver time: Åbne sager hvor den planlagte starttid er nået, skiftes automatisk
     til 'Igangværende'. Lukket/Aflyst/øvrige statusser røres aldrig."""
     import time as _t
+    if db.get_meta("aura_pauseret") == "1":
+        print("[status_vagt] springes over — Aura er sat på pause", flush=True)
+        return
     try:
         statusser = os_api.case_statuses()
         aaben_id = next((s.get("id") for s in statusser
