@@ -67,12 +67,53 @@ def reference_scan():
         log.exception("reference-scan fejlede")
 
 
+def status_vagt():
+    """Hver time: Åbne sager hvor den planlagte starttid er nået, skiftes automatisk
+    til 'Igangværende'. Lukket/Aflyst/øvrige statusser røres aldrig."""
+    import time as _t
+    try:
+        statusser = os_api.case_statuses()
+        aaben_id = next((s.get("id") for s in statusser
+                         if (s.get("text") or "").strip().lower() in ("åben", "aaben", "open")), None)
+        igang_id = next((s.get("id") for s in statusser
+                         if "igang" in (s.get("text") or "").lower()), None)
+        if aaben_id is None or igang_id is None:
+            print(f"[status_vagt] fandt ikke status-id'er (aaben={aaben_id}, igang={igang_id})", flush=True)
+            return
+        from . import os_graphql as os_gql
+        nu = int(_t.time())
+        skiftet = []
+        for c in os_api.cases_paged():
+            if str(c.get("status")) != str(aaben_id):
+                continue
+            nr = c.get("case_number")
+            try:
+                evts = os_gql.planned_events(nr)
+            except Exception as e:
+                print(f"[status_vagt] plan-opslag fejlede for sag {nr}: {str(e)[:150]}", flush=True)
+                continue
+            if any(int(e.get("startTime") or 0) and int(e.get("startTime") or 0) <= nu for e in evts):
+                try:
+                    os_api.set_case_status(nr, igang_id)
+                    skiftet.append(str(nr))
+                    print(f"[status_vagt] sag {nr} -> Igangværende (planlagt tid nået)", flush=True)
+                except Exception as e:
+                    print(f"[status_vagt] kunne ikke skifte sag {nr}: {str(e)[:150]}", flush=True)
+        if skiftet and LEADER_GROUP_CHAT_ID:
+            telegram.send_message(LEADER_GROUP_CHAT_ID,
+                                  "🔄 Automatisk status: sag " + ", ".join(skiftet)
+                                  + " er nu Igangværende (planlagt tid nået).")
+    except Exception as e:
+        print(f"[status_vagt] fejl: {str(e)[:200]}", flush=True)
+
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone=TZ)
     sch.add_job(morning_digest, "cron", hour=7, minute=0)
     sch.add_job(soon_reminders, "cron", minute="*/5")   # hele døgnet, alle dage
     sch.add_job(faktura_overview, "cron", day_of_week="mon", hour=8, minute=0)
     sch.add_job(reference_scan, "cron", day_of_week="mon-fri", hour="7-18", minute=0)  # hver hele time i arbejdstiden
+    sch.add_job(status_vagt, "cron", minute=10)   # hver time: Åben -> Igangværende når planlagt tid er nået
     sch.start()
     log.info("scheduler kører")
     return sch

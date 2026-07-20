@@ -331,6 +331,28 @@ def case_overview(case_number):
     return _gql(q).get("caseByCaseNumber") or {}
 
 
+def planned_events(case_number):
+    """Planlagte tider for en sag (Dagsoversigt/kalender): [{id, startTime, stopTime, text}]."""
+    cid = _case_internal_id(case_number)
+    if not cid:
+        return []
+    q = (f"{{ plannedEvents(caseId: {int(cid)}) "
+         "{ items { id startTime stopTime text } } }")
+    try:
+        res = _gql(q).get("plannedEvents")
+    except RuntimeError as e:
+        # nogle paginerede typer kraever pagination-argumentet alligevel
+        if "pagination" in str(e).lower():
+            q2 = (f"{{ plannedEvents(caseId: {int(cid)}, pagination: {{cursor: null, limit: 50}}) "
+                  "{ items { id startTime stopTime text } } }")
+            res = _gql(q2).get("plannedEvents")
+        else:
+            raise
+    if isinstance(res, dict):
+        return res.get("items") or []
+    return res or []
+
+
 # ---------- dokumentation: upload foto/fil til en sags Dokumentation-fane ----------
 
 def _enum_values(name):

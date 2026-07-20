@@ -227,6 +227,11 @@ def close_case(case_number, work_done=""):
     return {"status_id": sid}
 
 
+def set_case_status(case_number, status_id):
+    """Sæt sagens status (fx Igangværende) uden at røre andre felter."""
+    return _req("PUT", f"/cases/{case_number}", json={"status": int(status_id)})
+
+
 # ---------- Reference-scanning (kundeportal) ----------
 
 def recent_cases(days=14, maks_sider=30):
