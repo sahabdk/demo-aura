@@ -204,8 +204,15 @@ def vis_aftaler(chat_id, telegram_id):
     if not rows:
         telegram.send_message(chat_id, "Ingen aftaler i dag.")
         return
-    linjer = [f"- kl. {r['start'][11:16]} {r.get('kunde') or ''} {r.get('opgave') or ''}".rstrip()
-              for r in rows]
+    linjer = []
+    for r in rows:
+        tekst = " ".join(f"{r.get('kunde') or ''} {r.get('opgave') or ''}".split())
+        if len(tekst) < 2:
+            continue   # tom aftale -> vis ikke
+        linjer.append(f"- kl. {(r.get('start') or '')[11:16]} {tekst}".rstrip())
+    if not linjer:
+        telegram.send_message(chat_id, "Ingen aftaler i dag.")
+        return
     telegram.send_message(chat_id, "📅 Dagens aftaler:\n" + "\n".join(linjer))
 
 

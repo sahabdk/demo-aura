@@ -21,9 +21,10 @@ def morning_digest():
         linjer = []
         for r in rows:
             tid = (r.get("start") or "")[11:16]
-            tekst = f"{r.get('kunde') or ''} {r.get('opgave') or ''}".strip()
-            if not tekst:
-                continue   # aftale uden indhold (opgave/kunde) -> spring over
+            # normalisér AL slags mellemrum/usynlige tegn - tomme aftaler skal aldrig med
+            tekst = " ".join(f"{r.get('kunde') or ''} {r.get('opgave') or ''}".split())
+            if len(tekst) < 2:
+                continue   # aftale uden reelt indhold -> spring over
             linjer.append((f"- kl. {tid} {tekst}".rstrip() if tid else f"- {tekst}"))
         if not linjer:      # ingen RIGTIGE aftaler -> ingen besked
             continue
@@ -38,7 +39,14 @@ def soon_reminders():
     now = now_local()
     soon = now + timedelta(minutes=15)
     for r in db.due_reminders(now.isoformat(timespec="seconds"), soon.isoformat(timespec="seconds")):
-        besked = f"🔔 Om lidt kl. {r['start'][11:16]}: {r.get('kunde') or ''} {r.get('opgave') or ''}".rstrip()
+        tekst = " ".join(f"{r.get('kunde') or ''} {r.get('opgave') or ''}".split())
+        if len(tekst) < 2:   # tom aftale -> ingen paamindelse, men markér saa den ikke spoeger igen
+            try:
+                db.mark_reminded(r["id"])
+            except Exception:
+                pass
+            continue
+        besked = f"🔔 Om lidt kl. {r['start'][11:16]}: {tekst}".rstrip()
         try:
             telegram.send_message(r["telegram_id"], besked)
             db.mark_reminded(r["id"])
