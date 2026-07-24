@@ -386,15 +386,22 @@ def _unix_ts(dato, hhmm):
 
 
 def _find_user_id(navn):
-    """Slaa en medarbejders ordrestyring-id op ud fra navn eller initialer."""
+    """Slaa en medarbejders ordrestyring-id op ud fra navn eller initialer.
+    Fejltolerant: 'Demitri' rammer 'Dmitri' (tale-/stavefejl)."""
     nl = (navn or "").strip().lower()
     if not nl:
         return None
+    bedste, bedste_score = None, 0.0
     for u in os_api.users():
         full = (u.get("fullName") or f"{u.get('first_name','') or ''} {u.get('last_name','') or ''}").strip().lower()
         if nl == full or (full and nl in full) or (u.get("init") or "").lower() == nl:
             return u.get("id")
-    return None
+        # fuzzy: sammenlign mod hele navnet OG hvert enkelt navn-led
+        for kandidat in [full] + full.split():
+            r = difflib.SequenceMatcher(None, nl, kandidat).ratio()
+            if r > bedste_score:
+                bedste, bedste_score = u.get("id"), r
+    return bedste if bedste_score >= 0.75 else None
 
 
 def _find_pause(pause_min):

@@ -75,13 +75,38 @@ def download_file(file_id: str) -> bytes:
     return _download_voice(file_id)
 
 
+def _stt_prompt() -> str:
+    """Kontekst til talegenkendelsen: fagord + medarbejder-navne, saa navne hoeres rigtigt."""
+    dele = ["Dansk talebesked til firmaets assistent om VVS-/el-sager. "
+            "Ordet 'sag' efterfølges ofte af et tal. "
+            "Fagord: registrer timer, pause, overtid, udkald, færdigmeld, rykker, stregkode, "
+            "planlæg, tildel, materialer, vare, dokumentation, reference, montør, bemærkning."]
+    navne = []
+    try:
+        from . import db
+        navne += [u.get("navn") for u in db.all_users() if u.get("navn")]
+    except Exception:
+        pass
+    try:
+        from . import ordrestyring as os_api
+        for u in os_api.users():
+            n = (u.get("fullName") or f"{u.get('first_name') or ''} {u.get('last_name') or ''}").strip()
+            if n:
+                navne.append(n)
+    except Exception:
+        pass
+    if navne:
+        unikke = list(dict.fromkeys(navne))[:20]
+        dele.append("Navne der ofte nævnes: " + ", ".join(unikke) + ".")
+    return " ".join(dele)[:900]
+
+
 def transcribe_voice(file_id: str) -> str:
     audio = io.BytesIO(_download_voice(file_id))
     audio.name = "voice.ogg"
     tr = _client.audio.transcriptions.create(
         model=OPENAI_STT_MODEL, file=audio, language="da",
-        prompt="Dansk talebesked om en VVS-/el-sag. Indeholder ofte ordet 'sag' efterfulgt af et tal, "
-               "samt kundenavne, adresser, varenavne og materialer.",
+        prompt=_stt_prompt(),
     )
     return tr.text
 
@@ -145,8 +170,12 @@ def synthesize_voice(text: str) -> bytes:
     lyder naturligt på dansk. gpt-4o-*-tts understøtter en tone-instruktion."""
     kwargs = dict(model=OPENAI_TTS_MODEL, voice=OPENAI_TTS_VOICE,
                   input=_til_tale(text), response_format="opus")
-    if "gpt-4o" in OPENAI_TTS_MODEL and OPENAI_TTS_INSTRUCTIONS:
-        kwargs["instructions"] = OPENAI_TTS_INSTRUCTIONS
+    _DEFAULT_TONE = ("Du taler dansk. Lyd som en varm, rolig og venlig kollega på et "
+                     "VVS-kontor: naturligt tempo, små pauser, let smil i stemmen. "
+                     "Ikke robotagtig og ikke overdrevent entusiastisk. "
+                     "Udtal navne og tal tydeligt på dansk.")
+    if "gpt-4o" in OPENAI_TTS_MODEL:
+        kwargs["instructions"] = OPENAI_TTS_INSTRUCTIONS or _DEFAULT_TONE
     resp = _client.audio.speech.create(**kwargs)
     return resp.content
 
