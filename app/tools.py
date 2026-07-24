@@ -706,7 +706,7 @@ def planlaeg_sag(args, ctx):
     tekst += (" Den vises i Planlagt tid og Dagsoversigten, og status skifter selv til "
               "Igangvaerende naar tiden naas.")
     ud = {"resultat": tekst}
-    if (res or {}).get("id"):
+    if isinstance(res, dict) and res.get("id"):
         ud["_ref"] = {"type": "event", "id": res["id"]}
     return ud
 

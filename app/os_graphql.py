@@ -357,12 +357,16 @@ def create_planned_event(case_number, user_ids, start_time, stop_time, text=None
         inp["text"] = text
     q = "mutation($input: CreateEventInput!) { createEvent(input: $input) { id } }"
     try:
-        return _gql(q, {"input": inp}).get("createEvent") or {}
+        res = _gql(q, {"input": inp}).get("createEvent")
     except RuntimeError as e:
         if "selection" in str(e).lower() or "must have" in str(e).lower():
             q2 = "mutation($input: CreateEventInput!) { createEvent(input: $input) }"
-            return _gql(q2, {"input": inp}).get("createEvent") or {}
-        raise
+            res = _gql(q2, {"input": inp}).get("createEvent")
+        else:
+            raise
+    if isinstance(res, list):   # createEvent returnerer en LISTE (en begivenhed pr. medarbejder)
+        res = res[0] if res else {}
+    return res or {}
 
 
 # ---------- fortryd: slet objekter Aura selv har oprettet ----------
