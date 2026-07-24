@@ -395,7 +395,17 @@ def delete_documentation_file(file_id):
 
 
 def delete_event(event_id):
-    return _delete("deleteEvent", event_id)
+    """deleteEvent kraever ogsaa type: EventType! (samme enum som createEvent)."""
+    typer = _enum_values("EventType")
+    etype = (next((v for v in typer if "PLAN" in v.upper()), None)
+             or (typer[0] if typer else "PLANNING"))
+    q = f"mutation {{ deleteEvent(type: {etype}, id: {int(event_id)}) }}"
+    try:
+        return _gql(q)
+    except RuntimeError as e:
+        if "selection" in str(e).lower() or "must have" in str(e).lower():
+            return _gql(f"mutation {{ deleteEvent(type: {etype}, id: {int(event_id)}) {{ id }} }}")
+        raise
 
 
 # ---------- samlet sag-overblik (til sag_status-vaerktoejet) ----------
