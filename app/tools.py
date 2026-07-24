@@ -632,16 +632,39 @@ def sag_status(args, ctx):
 def tildel_sag(args, ctx):
     """Tildel en sag til en medarbejder (saetter Ansvarlig). Kun leder."""
     sag = args["sagsnummer"]
-    navn = (args.get("medarbejder") or "").strip()
-    if not navn:
-        return {"fejl": "jeg mangler medarbejderens navn"}
-    mid = _find_user_id(navn)
-    if not mid:
-        return {"resultat": f"Jeg kunne ikke finde medarbejderen '{navn}' i ordrestyring. "
-                            "Sig 'vis medarbejdere' for at se listen."}
-    os_gql.add_case_user(sag, mid)
-    fuldt = os_api.user_name(mid) or navn
-    return {"resultat": f"Sag {sag}: {fuldt} er sat paa som medarbejder (Medarbejdere-kortet)"}
+    mids, ukendte = _find_medarbejdere(args, ctx, kraev=True)
+    if ukendte:
+        return {"resultat": "Jeg kunne ikke finde disse medarbejdere i ordrestyring: "
+                            + ", ".join(ukendte) + ". Sig 'vis medarbejdere' for listen."}
+    if not mids:
+        return {"fejl": "jeg mangler medarbejdernes navne"}
+    for mid in mids:
+        os_gql.add_case_user(sag, mid)
+    hvem = ", ".join(os_api.user_name(m) or str(m) for m in mids)
+    return {"resultat": f"Sag {sag}: {hvem} er sat paa som medarbejder(e) (Medarbejdere-kortet)"}
+
+
+def _find_medarbejdere(args, ctx, kraev=False):
+    """Slaa en ELLER flere medarbejdere op ud fra args (medarbejder/medarbejdere).
+    Returnerer (liste af id'er, liste af ukendte navne)."""
+    navne = args.get("medarbejdere") or []
+    if isinstance(navne, str):
+        navne = [navne]
+    if args.get("medarbejder"):
+        navne = list(navne) + [args["medarbejder"]]
+    navne = [str(n).strip() for n in navne if str(n).strip()]
+    mids, ukendte = [], []
+    for n in navne:
+        mid = _find_user_id(n)
+        if mid and mid not in mids:
+            mids.append(mid)
+        elif not mid:
+            ukendte.append(n)
+    if not navne and not kraev:
+        mit = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+        if mit:
+            mids = [mit]
+    return mids, ukendte
 
 
 def planlaeg_sag(args, ctx):
@@ -674,22 +697,19 @@ def planlaeg_sag(args, ctx):
         return {"fejl": "kunne ikke forstaa dato eller klokkeslaet"}
     if stop <= start:
         return {"fejl": "sluttidspunktet skal vaere efter starttidspunktet"}
-    navn = (args.get("medarbejder") or "").strip()
-    if navn:
-        mid = _find_user_id(navn)
-        if not mid:
-            return {"resultat": f"Jeg kunne ikke finde medarbejderen '{navn}' i ordrestyring."}
-    else:
-        mid = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
-        if not mid:
-            return {"fejl": "sig hvilken medarbejder der skal planlaegges paa sagen"}
+    mids, ukendte = _find_medarbejdere(args, ctx)
+    if ukendte:
+        return {"resultat": "Jeg kunne ikke finde disse medarbejdere i ordrestyring: "
+                            + ", ".join(ukendte) + ". Sig 'vis medarbejdere' for listen."}
+    if not mids:
+        return {"fejl": "sig hvilke medarbejdere der skal planlaegges paa sagen"}
     # Findes der allerede en plan for SAMME medarbejder SAMME dag, erstattes den
     # (saa "tilfoej/ret planen" aldrig giver dubletter)
     erstattet = 0
     try:
         evts = os_gql.planned_events(sag)
         print(f"[planlaeg_sag] sag {sag}: {len(evts)} eksisterende planer; soeger dato={dato}, "
-              f"medarbejder-id={mid}", flush=True)
+              f"medarbejder-id'er={mids}", flush=True)
         for ev in evts:
             u = (ev.get("user") or {}).get("id")
             try:
@@ -699,15 +719,15 @@ def planlaeg_sag(args, ctx):
             print(f"[planlaeg_sag] kandidat: id={ev.get('id')} dato={ev_dato} bruger={u}", flush=True)
             if ev_dato != dato or not ev.get("id"):
                 continue
-            # samme dag: slet hvis samme medarbejder ELLER hvis brugeren ikke kan aflaeses
-            if u is None or int(u) == int(mid):
+            # samme dag: slet hvis en af de valgte medarbejdere ELLER hvis brugeren ikke kan aflaeses
+            if u is None or int(u) in [int(m) for m in mids]:
                 os_gql.delete_event(ev["id"])
                 erstattet += 1
                 print(f"[planlaeg_sag] slettede plan id={ev.get('id')}", flush=True)
     except Exception as e:
         print(f"[planlaeg_sag] kunne ikke rydde gamle planer: {str(e)[:200]}", flush=True)
-    res = os_gql.create_planned_event(sag, [mid], start, stop, text=(args.get("beskrivelse") or None))
-    hvem = os_api.user_name(mid) or navn or "medarbejderen"
+    res = os_gql.create_planned_event(sag, mids, start, stop, text=(args.get("beskrivelse") or None))
+    hvem = ", ".join(os_api.user_name(m) or str(m) for m in mids)
     tekst = f"Sag {sag} er planlagt {dato} kl. {fra}-{til} med {hvem}."
     if erstattet:
         tekst = f"Planen er OPDATERET (den gamle blev erstattet): {tekst}"
@@ -828,7 +848,9 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {
                 "sagsnummer": {"type": "string"}, "dato": {"type": "string"},
                 "fra": {"type": "string"}, "til": {"type": "string"},
-                "medarbejder": {"type": "string"}, "beskrivelse": {"type": "string"}},
+                "medarbejdere": {"type": "array", "items": {"type": "string"},
+                                 "description": "et eller flere medarbejder-navne"},
+                "beskrivelse": {"type": "string"}},
                 "required": ["sagsnummer", "fra"]},
         }},
     },
@@ -842,8 +864,10 @@ TOOLS = [
                            "'giv sagen til Thomas'). Forveksl ALDRIG med kontaktperson - kontaktperson "
                            "er KUNDENS kontaktperson, aldrig en af firmaets medarbejdere.",
             "parameters": {"type": "object", "properties": {
-                "sagsnummer": {"type": "string"}, "medarbejder": {"type": "string"}},
-                "required": ["sagsnummer", "medarbejder"]},
+                "sagsnummer": {"type": "string"},
+                "medarbejdere": {"type": "array", "items": {"type": "string"},
+                                 "description": "et eller flere medarbejder-navne"}},
+                "required": ["sagsnummer", "medarbejdere"]},
         }},
     },
     {
