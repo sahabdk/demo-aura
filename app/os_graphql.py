@@ -320,6 +320,51 @@ def documentation_count(case_number):
     return res
 
 
+# ---------- medarbejdere paa sagen + planlagt tid ----------
+
+def case_user_ids(case_number):
+    """Sagens interne id + listen af medarbejder-id'er (Medarbejdere-kortet)."""
+    q = f'{{ caseByCaseNumber(caseNumber: "{_q(str(case_number))}") {{ id users {{ id }} }} }}'
+    c = _gql(q).get("caseByCaseNumber") or {}
+    return c.get("id"), [u.get("id") for u in (c.get("users") or []) if u.get("id") is not None]
+
+
+def add_case_user(case_number, user_id):
+    """Tilfoej en medarbejder til sagens Medarbejdere-liste (bevarer de eksisterende)."""
+    cid, ids = case_user_ids(case_number)
+    if not cid:
+        raise RuntimeError(f"kunne ikke finde sag {case_number}")
+    ny = sorted({int(i) for i in ids} | {int(user_id)})
+    q = "mutation($input: UpdateCaseInput!) { updateCase(id: %d, input: $input) { id } }" % int(cid)
+    return _gql(q, {"input": {"userIds": ny}}).get("updateCase") or {}
+
+
+def create_planned_event(case_number, user_ids, start_time, stop_time, text=None):
+    """Opret Planlagt tid paa en sag (vises i Dagsoversigt/kalender).
+    addUsersToCase=True laegger samtidig medarbejderne paa sagens Medarbejdere-liste."""
+    cid = _case_internal_id(case_number)
+    if not cid:
+        raise RuntimeError(f"kunne ikke finde sag {case_number}")
+    typer = _enum_values("EventType")
+    etype = (next((v for v in typer if "PLAN" in v.upper()), None)
+             or next((v for v in typer if "CASE" in v.upper() or "SAG" in v.upper()), None)
+             or (typer[0] if typer else "PLANNING"))
+    print(f"[create_planned_event] EventType={typer} -> {etype}", flush=True)
+    inp = {"type": etype, "userIds": [int(u) for u in user_ids],
+           "startTime": int(start_time), "stopTime": int(stop_time),
+           "caseId": int(cid), "addUsersToCase": True}
+    if text:
+        inp["text"] = text
+    q = "mutation($input: CreateEventInput!) { createEvent(input: $input) { id } }"
+    try:
+        return _gql(q, {"input": inp}).get("createEvent") or {}
+    except RuntimeError as e:
+        if "selection" in str(e).lower() or "must have" in str(e).lower():
+            q2 = "mutation($input: CreateEventInput!) { createEvent(input: $input) }"
+            return _gql(q2, {"input": inp}).get("createEvent") or {}
+        raise
+
+
 # ---------- fortryd: slet objekter Aura selv har oprettet ----------
 
 def _delete(mutation, obj_id):

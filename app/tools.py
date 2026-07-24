@@ -93,7 +93,17 @@ def mine_sager(args, ctx):
     if not mit_id:
         return {"resultat": "Din bruger er ikke koblet til en medarbejder i ordrestyring, "
                             "så jeg kan ikke se hvilke sager der er tildelt dig. Bed lederen om at koble dig."}
-    mine = [c for c in os_api.cases_paged() if str(c.get("main_technician") or "") == str(mit_id)]
+    def _er_med(c):
+        for k in ("users", "workers", "employees"):
+            v = c.get(k)
+            if isinstance(v, list):
+                for u in v:
+                    uid = u.get("id") if isinstance(u, dict) else u
+                    if str(uid) == str(mit_id):
+                        return True
+        return False
+    mine = [c for c in os_api.cases_paged()
+            if str(c.get("main_technician") or "") == str(mit_id) or _er_med(c)]
     if not args.get("inkluder_lukkede"):
         mine = [c for c in mine if not os_api.is_closed(c)]
     mine.sort(key=lambda c: int(c.get("created_at") or 0), reverse=True)
@@ -112,10 +122,17 @@ def _ejer_eller_afvis(sagsnummer, ctx):
     case = os_api.get_case(sagsnummer) or {}
     mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
     tildelt = str(case.get("main_technician") or "")
-    if not mit_id or str(mit_id) != tildelt:
-        return {"resultat": "Du kan kun kommentere og redigere dine egne opgaver — altså dem der er "
-                            "tildelt dig. Bed lederen, hvis en anden sag skal ændres."}
-    return None
+    if mit_id and str(mit_id) == tildelt:
+        return None
+    if mit_id:   # ogsaa ok hvis medarbejderen staar paa sagens Medarbejdere-liste
+        try:
+            _, uids = os_gql.case_user_ids(sagsnummer)
+            if int(mit_id) in [int(u) for u in uids]:
+                return None
+        except Exception:
+            pass
+    return {"resultat": "Du kan kun kommentere og redigere dine egne opgaver — altså dem der er "
+                        "tildelt dig. Bed lederen, hvis en anden sag skal ændres."}
 
 
 def skriv_bemaerkning(args, ctx):
@@ -622,9 +639,55 @@ def tildel_sag(args, ctx):
     if not mid:
         return {"resultat": f"Jeg kunne ikke finde medarbejderen '{navn}' i ordrestyring. "
                             "Sig 'vis medarbejdere' for at se listen."}
-    os_api.assign_case(sag, mid)
+    os_gql.add_case_user(sag, mid)
     fuldt = os_api.user_name(mid) or navn
-    return {"resultat": f"Sag {sag} er tildelt {fuldt} (staar nu som Ansvarlig)"}
+    return {"resultat": f"Sag {sag}: {fuldt} er sat paa som medarbejder (Medarbejdere-kortet)"}
+
+
+def planlaeg_sag(args, ctx):
+    """Planlaeg en sag: Planlagt tid med dato, tidsrum og medarbejder (kun leder)."""
+    sag = args["sagsnummer"]
+    dato = (args.get("dato") or "").strip() or now_local().strftime("%Y-%m-%d")
+
+    def _norm_tid(s):
+        s = str(s or "").strip().replace(".", ":")
+        if not s:
+            return None
+        if ":" not in s:
+            s = f"{int(s):02d}:00"
+        return s
+
+    try:
+        fra = _norm_tid(args.get("fra"))
+        til = _norm_tid(args.get("til"))
+    except (ValueError, TypeError):
+        return {"fejl": "kunne ikke forstaa klokkeslaettet"}
+    if not fra:
+        return {"fejl": "jeg mangler et starttidspunkt (fx kl. 8)"}
+    if not til:
+        h, m = fra.split(":")
+        til = f"{min(23, int(h) + 1):02d}:{m}"
+    try:
+        start = _unix_ts(dato, fra)
+        stop = _unix_ts(dato, til)
+    except ValueError:
+        return {"fejl": "kunne ikke forstaa dato eller klokkeslaet"}
+    if stop <= start:
+        return {"fejl": "sluttidspunktet skal vaere efter starttidspunktet"}
+    navn = (args.get("medarbejder") or "").strip()
+    if navn:
+        mid = _find_user_id(navn)
+        if not mid:
+            return {"resultat": f"Jeg kunne ikke finde medarbejderen '{navn}' i ordrestyring."}
+    else:
+        mid = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+        if not mid:
+            return {"fejl": "sig hvilken medarbejder der skal planlaegges paa sagen"}
+    os_gql.create_planned_event(sag, [mid], start, stop, text=(args.get("beskrivelse") or None))
+    hvem = os_api.user_name(mid) or navn or "medarbejderen"
+    return {"resultat": f"Sag {sag} er planlagt {dato} kl. {fra}-{til} med {hvem}. "
+                        "Den vises i Planlagt tid og Dagsoversigten, og status skifter selv til "
+                        "Igangvaerende naar tiden naas."}
 
 
 def vis_handlinger(args, ctx):
@@ -718,6 +781,21 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": planlaeg_sag, "roles": {"pro"},
+        "schema": {"type": "function", "function": {
+            "name": "planlaeg_sag",
+            "description": "Planlaeg en sag i kalenderen: opretter 'Planlagt tid' med dato, tidsrum og "
+                           "medarbejder, og laegger samtidig medarbejderen paa sagen. Brug ved fx "
+                           "'planlaeg sag 124 til i morgen kl. 8 med Dmitri'. fra/til som HH:MM, dato "
+                           "som YYYY-MM-DD (default i dag). Uden medarbejder bruges den der spoerger.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}, "dato": {"type": "string"},
+                "fra": {"type": "string"}, "til": {"type": "string"},
+                "medarbejder": {"type": "string"}, "beskrivelse": {"type": "string"}},
+                "required": ["sagsnummer", "fra"]},
         }},
     },
     {
@@ -974,7 +1052,7 @@ MUTERENDE = {
     "skriv_bemaerkning": "bemærkning skrevet", "afslut_sag": "sag færdigmeldt",
     "registrer_timer": "timer registreret", "tilfoej_vare": "vare tilføjet",
     "send_paamindelse_email": "rykker sendt", "saet_rykker_niveau": "rykker-tæller sat",
-    "husk_aftale": "aftale gemt", "tildel_sag": "sag tildelt",
+    "husk_aftale": "aftale gemt", "tildel_sag": "sag tildelt", "planlaeg_sag": "sag planlagt",
 }
 
 
