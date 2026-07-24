@@ -390,6 +390,10 @@ def delete_documentation_file(file_id):
     return _delete("deleteDocumentationFile", file_id)
 
 
+def delete_event(event_id):
+    return _delete("deleteEvent", event_id)
+
+
 # ---------- samlet sag-overblik (til sag_status-vaerktoejet) ----------
 
 def case_overview(case_number):
@@ -407,14 +411,14 @@ def planned_events(case_number):
     if not cid:
         return []
     q = (f"{{ plannedEvents(caseId: {int(cid)}) "
-         "{ items { id startTime stopTime text } } }")
+         "{ items { id startTime stopTime text user { id } } } }")
     try:
         res = _gql(q).get("plannedEvents")
     except RuntimeError as e:
         # nogle paginerede typer kraever pagination-argumentet alligevel
         if "pagination" in str(e).lower():
             q2 = (f"{{ plannedEvents(caseId: {int(cid)}, pagination: {{cursor: null, limit: 50}}) "
-                  "{ items { id startTime stopTime text } } }")
+                  "{ items { id startTime stopTime text user { id } } } }")
             res = _gql(q2).get("plannedEvents")
         else:
             raise

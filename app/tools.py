@@ -683,11 +683,32 @@ def planlaeg_sag(args, ctx):
         mid = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
         if not mid:
             return {"fejl": "sig hvilken medarbejder der skal planlaegges paa sagen"}
-    os_gql.create_planned_event(sag, [mid], start, stop, text=(args.get("beskrivelse") or None))
+    # Findes der allerede en plan for SAMME medarbejder SAMME dag, erstattes den
+    # (saa "tilfoej/ret planen" aldrig giver dubletter)
+    erstattet = 0
+    try:
+        for ev in os_gql.planned_events(sag):
+            u = (ev.get("user") or {}).get("id")
+            try:
+                ev_dato = datetime.fromtimestamp(int(ev.get("startTime") or 0)).strftime("%Y-%m-%d")
+            except (ValueError, TypeError, OSError):
+                continue
+            if u is not None and int(u) == int(mid) and ev_dato == dato and ev.get("id"):
+                os_gql.delete_event(ev["id"])
+                erstattet += 1
+    except Exception as e:
+        print(f"[planlaeg_sag] kunne ikke rydde gamle planer: {str(e)[:150]}", flush=True)
+    res = os_gql.create_planned_event(sag, [mid], start, stop, text=(args.get("beskrivelse") or None))
     hvem = os_api.user_name(mid) or navn or "medarbejderen"
-    return {"resultat": f"Sag {sag} er planlagt {dato} kl. {fra}-{til} med {hvem}. "
-                        "Den vises i Planlagt tid og Dagsoversigten, og status skifter selv til "
-                        "Igangvaerende naar tiden naas."}
+    tekst = f"Sag {sag} er planlagt {dato} kl. {fra}-{til} med {hvem}."
+    if erstattet:
+        tekst = f"Planen er OPDATERET (den gamle blev erstattet): {tekst}"
+    tekst += (" Den vises i Planlagt tid og Dagsoversigten, og status skifter selv til "
+              "Igangvaerende naar tiden naas.")
+    ud = {"resultat": tekst}
+    if (res or {}).get("id"):
+        ud["_ref"] = {"type": "event", "id": res["id"]}
+    return ud
 
 
 def vis_handlinger(args, ctx):
@@ -709,7 +730,8 @@ def fortryd_handling(args, ctx):
     medarbejder kun egne handlinger. Valgfrit: sagsnummer og/eller type."""
     sag = str(args.get("sagsnummer") or "").strip()
     typ = (args.get("type") or "").strip().lower()[:3]   # 'tim'|'var'|'fot'
-    DTYPE = {"hour": "timeregistrering", "material": "vare", "dokument": "foto"}
+    DTYPE = {"hour": "timeregistrering", "material": "vare", "dokument": "foto",
+             "event": "planlagt tid"}
     kandidat = None
     for r in db.handlinger_seneste(antal=100):
         if not r.get("ref_id") or r.get("fortrudt"):
@@ -736,6 +758,8 @@ def fortryd_handling(args, ctx):
             os_gql.delete_case_material(rid)
         elif rt == "dokument":
             os_gql.delete_documentation_file(rid)
+        elif rt == "event":
+            os_gql.delete_event(rid)
     except Exception as e:
         print(f"[fortryd] {rt} {rid} fejlede: {str(e)[:250]}", flush=True)
         return {"fejl": f"kunne ikke fortryde ({DTYPE.get(rt)}): {str(e)[:150]}"}
@@ -790,7 +814,9 @@ TOOLS = [
             "description": "Planlaeg en sag i kalenderen: opretter 'Planlagt tid' med dato, tidsrum og "
                            "medarbejder, og laegger samtidig medarbejderen paa sagen. Brug ved fx "
                            "'planlaeg sag 124 til i morgen kl. 8 med Dmitri'. fra/til som HH:MM, dato "
-                           "som YYYY-MM-DD (default i dag). Uden medarbejder bruges den der spoerger.",
+                           "som YYYY-MM-DD (default i dag). Uden medarbejder bruges den der spoerger. "
+                           "Retter/tilfoejer brugeren noget til en plan, saa kald bare planlaeg_sag "
+                           "igen med de fulde tider - den gamle plan erstattes automatisk (ingen dublet).",
             "parameters": {"type": "object", "properties": {
                 "sagsnummer": {"type": "string"}, "dato": {"type": "string"},
                 "fra": {"type": "string"}, "til": {"type": "string"},
