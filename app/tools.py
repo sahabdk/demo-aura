@@ -612,6 +612,21 @@ def sag_status(args, ctx):
     return status
 
 
+def tildel_sag(args, ctx):
+    """Tildel en sag til en medarbejder (saetter Ansvarlig). Kun leder."""
+    sag = args["sagsnummer"]
+    navn = (args.get("medarbejder") or "").strip()
+    if not navn:
+        return {"fejl": "jeg mangler medarbejderens navn"}
+    mid = _find_user_id(navn)
+    if not mid:
+        return {"resultat": f"Jeg kunne ikke finde medarbejderen '{navn}' i ordrestyring. "
+                            "Sig 'vis medarbejdere' for at se listen."}
+    os_api.assign_case(sag, mid)
+    fuldt = os_api.user_name(mid) or navn
+    return {"resultat": f"Sag {sag} er tildelt {fuldt} (staar nu som Ansvarlig)"}
+
+
 def vis_handlinger(args, ctx):
     """Handlingsloggen (kun leder): hvad Aura har udfoert, af hvem og hvornaar."""
     dato = (args.get("dato") or "").strip() or None
@@ -703,6 +718,20 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": tildel_sag, "roles": {"pro"},
+        "schema": {"type": "function", "function": {
+            "name": "tildel_sag",
+            "description": "Tildel en sag til en MEDARBEJDER saa den staar som Ansvarlig og dukker op "
+                           "under medarbejderens egne sager. Brug ALTID denne naar brugeren siger at en "
+                           "medarbejder skal lave/udfoere/have en opgave (fx 'Dmitri skal lave det', "
+                           "'giv sagen til Thomas'). Forveksl ALDRIG med kontaktperson - kontaktperson "
+                           "er KUNDENS kontaktperson, aldrig en af firmaets medarbejdere.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}, "medarbejder": {"type": "string"}},
+                "required": ["sagsnummer", "medarbejder"]},
         }},
     },
     {
@@ -845,7 +874,9 @@ TOOLS = [
         "schema": {"type": "function", "function": {
             "name": "opret_sag",
             "description": "Opret en NY sag på en eksisterende kunde. Brug KUN når brugeren tydeligt vil have en ny sag. "
-                           "Valgfrit: projektnavn, reference, kontaktperson, leveringsadresse. Returnerer sagsnummer.",
+                           "Valgfrit: projektnavn, reference, kontaktperson (KUNDENS kontaktperson - ALDRIG en "
+                           "medarbejder; skal en medarbejder have opgaven, brug tildel_sag bagefter), "
+                           "leveringsadresse. Returnerer sagsnummer.",
             "parameters": {"type": "object", "properties": {
                 "customer_number": {"type": "string"}, "beskrivelse": {"type": "string"},
                 "projektnavn": {"type": "string"}, "reference": {"type": "string"},
@@ -943,7 +974,7 @@ MUTERENDE = {
     "skriv_bemaerkning": "bemærkning skrevet", "afslut_sag": "sag færdigmeldt",
     "registrer_timer": "timer registreret", "tilfoej_vare": "vare tilføjet",
     "send_paamindelse_email": "rykker sendt", "saet_rykker_niveau": "rykker-tæller sat",
-    "husk_aftale": "aftale gemt",
+    "husk_aftale": "aftale gemt", "tildel_sag": "sag tildelt",
 }
 
 
