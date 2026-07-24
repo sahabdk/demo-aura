@@ -687,17 +687,25 @@ def planlaeg_sag(args, ctx):
     # (saa "tilfoej/ret planen" aldrig giver dubletter)
     erstattet = 0
     try:
-        for ev in os_gql.planned_events(sag):
+        evts = os_gql.planned_events(sag)
+        print(f"[planlaeg_sag] sag {sag}: {len(evts)} eksisterende planer; soeger dato={dato}, "
+              f"medarbejder-id={mid}", flush=True)
+        for ev in evts:
             u = (ev.get("user") or {}).get("id")
             try:
                 ev_dato = datetime.fromtimestamp(int(ev.get("startTime") or 0)).strftime("%Y-%m-%d")
             except (ValueError, TypeError, OSError):
+                ev_dato = "?"
+            print(f"[planlaeg_sag] kandidat: id={ev.get('id')} dato={ev_dato} bruger={u}", flush=True)
+            if ev_dato != dato or not ev.get("id"):
                 continue
-            if u is not None and int(u) == int(mid) and ev_dato == dato and ev.get("id"):
+            # samme dag: slet hvis samme medarbejder ELLER hvis brugeren ikke kan aflaeses
+            if u is None or int(u) == int(mid):
                 os_gql.delete_event(ev["id"])
                 erstattet += 1
+                print(f"[planlaeg_sag] slettede plan id={ev.get('id')}", flush=True)
     except Exception as e:
-        print(f"[planlaeg_sag] kunne ikke rydde gamle planer: {str(e)[:150]}", flush=True)
+        print(f"[planlaeg_sag] kunne ikke rydde gamle planer: {str(e)[:200]}", flush=True)
     res = os_gql.create_planned_event(sag, [mid], start, stop, text=(args.get("beskrivelse") or None))
     hvem = os_api.user_name(mid) or navn or "medarbejderen"
     tekst = f"Sag {sag} er planlagt {dato} kl. {fra}-{til} med {hvem}."
