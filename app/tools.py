@@ -675,6 +675,24 @@ def vis_raa_timer(args, ctx):
             "timer": rows}
 
 
+def find_sag(args, ctx):
+    """Find en sag ud fra fritekst: adresse, kundenavn eller begge (fx 'torvet 6')."""
+    tekst = (args.get("soegetekst") or "").strip()
+    if not tekst:
+        return {"fejl": "tom soegetekst"}
+    sagsnr, forslag = find_sag_ud_fra_tekst(tekst, max_forslag=5)
+    if sagsnr:
+        f = forslag[0]
+        return {"entydigt_match": True, "sagsnummer": sagsnr,
+                "kunde": f.get("kunde"), "adresse": f.get("adresse"),
+                "beskrivelse": f.get("beskrivelse")}
+    if forslag:
+        return {"entydigt_match": False, "forslag": [
+            {"sagsnummer": f["sagsnummer"], "kunde": f["kunde"],
+             "adresse": f["adresse"], "beskrivelse": f["beskrivelse"]} for f in forslag]}
+    return {"resultat": "ingen aabne sager matchede - proev evt. et andet navn/adresse"}
+
+
 def sag_status(args, ctx):
     """Samlet overblik over en sag: hvad er udfyldt, hvor meget ligger der (timer,
     dokumenter, fakturaer), og hvad der mangler. Aura bruger det som guide."""
@@ -1042,6 +1060,19 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {
                 "dato": {"type": "string"}, "antal": {"type": "integer"}},
                 "required": []},
+        }},
+    },
+    {
+        "func": find_sag, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "find_sag",
+            "description": "Find en sag ud fra ADRESSE eller KUNDENAVN (fritekst, taaler stave- og "
+                           "hoerefejl). Brug den ALTID naar brugeren omtaler en sag uden nummer, fx "
+                           "'ordren paa Torvet 6', 'sagen hos Mads Jensen'. Ved entydigt_match: brug "
+                           "sagsnummeret direkte. Ved forslag: list dem kort (sagsnummer + kunde + "
+                           "beskrivelse) og spoerg hvilken.",
+            "parameters": {"type": "object", "properties": {
+                "soegetekst": {"type": "string"}}, "required": ["soegetekst"]},
         }},
     },
     {

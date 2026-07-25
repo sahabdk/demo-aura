@@ -113,7 +113,21 @@ def _stt_prompt() -> str:
     if navne:
         unikke = list(dict.fromkeys(navne))[:20]
         dele.append("Navne der ofte nævnes: " + ", ".join(unikke) + ".")
-    return " ".join(dele)[:900]
+    try:   # kunders navne og adresser -> adresser som "Torvet 6" hoeres rigtigt
+        from . import ordrestyring as os_api
+        steder = []
+        for d in os_api.all_debtors()[:40]:
+            n = (d.get("customer_name") or "").strip()
+            adr = (d.get("customer_address") or "").strip()
+            if n:
+                steder.append(n)
+            if adr:
+                steder.append(adr)
+        if steder:
+            dele.append("Kunder og adresser: " + ", ".join(dict.fromkeys(steder)) + ".")
+    except Exception:
+        pass
+    return " ".join(dele)[:1800]
 
 
 def transcribe_voice(file_id: str) -> str:
