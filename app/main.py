@@ -239,8 +239,9 @@ async def telegram_webhook(secret: str, request: Request):
     afv_foto = _afventende_foto.get(str(chat["id"]))
     if afv_foto and _time.time() - afv_foto[1] < 600:
         tl = text.strip().lower()
-        mnum = re.fullmatch(r"(\d{1,6})", tl) or (re.search(r"sag\w*\.?\s*(\d{1,6})", tl)
-                                                   if len(tl) < 60 and ("gem" in tl or "sag" in tl) else None)
+        # Hun har LIGE spurgt "hvilken sag?" - ethvert kort svar med et tal er sagsnummeret
+        # (accepterer "132", "ja 132", "sag 132", "på sagen 132 tak" osv.)
+        mnum = re.search(r"(\d{1,6})", tl) if len(tl) < 40 else None
         if mnum:
             _afventende_foto.pop(str(chat["id"]), None)
             _gem_foto_paa_sag(chat["id"], from_id, user, afv_foto[0], mnum.group(1))
