@@ -455,10 +455,12 @@ def try_command(chat_id, telegram_id, text):
         m0 = re.search(r"sag\s+(\d+)", t)
         vis_raa_timer(chat_id, m0.group(1) if m0 else None)
         return True
-    # "Nye/dagens ordrer" — robust mod talt/naturligt sprog, men ikke når man vil OPRETTE noget
-    skab = any(w in t for w in ("opret", "lav ", "tilføj", "registrer", "ny sag på", "opgave på"))
+    # "Nye/dagens ordrer" — kun KORTE, ægte kommandoer. Lange sætninger, opret-ord eller
+    # kunde-omtale er samtale og skal til AI'en (ellers kapres midt-i-dialog-svar).
+    skab = any(w in t for w in ("opret", "lav ", "tilføj", "tilfoej", "registrer", "ny sag på",
+                                "opgave på", "kunde", "navn", "vej ", "gade"))
     emne = any(w in t for w in ("ordre", "ordrer", "sag", "sager", "opgave", "opgaver"))
-    if not skab and emne:
+    if not skab and emne and len(t.split()) <= 6:
         if "nye" in t or "nyt" in t or "kommet" in t:   # fx "er der kommet nye ordrer?"
             vis_nye_ordrer(chat_id, telegram_id)
             return True
