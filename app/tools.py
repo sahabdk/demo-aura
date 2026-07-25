@@ -820,6 +820,19 @@ def planlaeg_sag(args, ctx):
     return ud
 
 
+def besked_til_leder(args, ctx):
+    """Send en kort besked til lederen i Telegram (medarbejder-oensker, anmodninger m.m.)."""
+    tekst = (args.get("besked") or "").strip()
+    if not tekst:
+        return {"fejl": "beskeden er tom"}
+    from .config import LEADER_GROUP_CHAT_ID
+    if not LEADER_GROUP_CHAT_ID:
+        return {"fejl": "leder-chatten er ikke sat op endnu"}
+    from . import telegram as _tg
+    _tg.send_message(LEADER_GROUP_CHAT_ID, f"💬 Besked fra {ctx.get('navn') or 'medarbejder'}: {tekst}")
+    return {"resultat": "Beskeden er sendt til lederen"}
+
+
 def vis_handlinger(args, ctx):
     """Handlingsloggen (kun leder): hvad Aura har udfoert, af hvem og hvornaar."""
     dato = (args.get("dato") or "").strip() or None
@@ -914,6 +927,18 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": besked_til_leder, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "besked_til_leder",
+            "description": "Send en kort besked til lederen (Dan) i Telegram. Brug den naar brugeren "
+                           "vil have noget videre til lederen: 'bed lederen tildele mig sag X', "
+                           "oensker, spoergsmaal, meldinger. Kald vaerktoejet STRAKS naar brugeren "
+                           "har sagt ja EN gang - spoerg aldrig om bekraeftelse flere gange.",
+            "parameters": {"type": "object", "properties": {
+                "besked": {"type": "string"}}, "required": ["besked"]},
         }},
     },
     {
@@ -1197,6 +1222,7 @@ MUTERENDE = {
     "registrer_timer": "timer registreret", "tilfoej_vare": "vare tilføjet",
     "send_paamindelse_email": "rykker sendt", "saet_rykker_niveau": "rykker-tæller sat",
     "husk_aftale": "aftale gemt", "tildel_sag": "sag tildelt", "planlaeg_sag": "sag planlagt",
+    "besked_til_leder": "besked sendt til leder",
 }
 
 
