@@ -1,6 +1,7 @@
 """FastAPI-indgang: modtager Telegram-webhooks, kører agenten, svarer."""
 import logging
 import re
+import time as _time
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 
@@ -86,6 +87,36 @@ async def adr_post(token: str, request: Request):
 
 
 _seen_updates = []   # de seneste update_id'er vi har behandlet (mod Telegram-genforsøg -> dubletter)
+_afventende_foto = {}   # chat_id -> (file_id, tidspunkt): foto der venter på et sagsnummer
+
+
+def _gem_foto_paa_sag(chat_id, from_id, user, file_id, sag, caption=""):
+    """Hent fotoet fra Telegram og gem det i sagens Dokumentation (med alle tjek)."""
+    if db.get_meta("aura_pauseret") == "1":
+        telegram.send_message(chat_id, "⏸ Aura er sat på pause af lederen — jeg må ikke gemme noget lige nu.")
+        return
+    from . import tools as _tools
+    afvist = _tools._ejer_eller_afvis(sag, {"telegram_id": from_id, "navn": user["navn"],
+                                            "rolle": user["rolle"]})
+    if afvist:
+        telegram.send_message(chat_id, afvist.get("resultat") or "Afvist.")
+        return
+    try:
+        data = telegram.download_file(file_id)
+        from . import os_graphql as os_gql
+        from .config import now_local
+        navn = f"aura_{now_local().strftime('%Y%m%d_%H%M%S')}.jpg"
+        _up = os_gql.upload_case_document(sag, navn, data, description=caption)
+        try:
+            db.log_handling(from_id, user["navn"], user["rolle"], "foto gemt på sag",
+                            f"sag {sag}: {navn}", ref_type="dokument", ref_id=(_up or {}).get("id"))
+        except Exception:
+            pass
+        telegram.send_message(chat_id, f"📎 Billedet er gemt under Dokumentation på sag {sag}.")
+    except Exception as e:
+        log.exception("dokument-upload-fejl")
+        telegram.send_message(chat_id, f"Kunne ikke gemme billedet på sag {sag} — prøv igen.")
+        _notify_leader(f"Dokument-upload-fejl: {e}")
 
 
 def _already_handled(update_id):
@@ -162,49 +193,18 @@ async def telegram_webhook(secret: str, request: Request):
             rep = msg.get("reply_to_message") or {}
             rep_tekst = f"{rep.get('text') or ''} {rep.get('caption') or ''}"
             m_sag = re.search(r"[Ss]ag\w*\.?\s*(\d+)", rep_tekst)
-        try:
-            data = telegram.download_file(msg["photo"][-1]["file_id"])
-        except Exception as e:
-            log.exception("foto-download-fejl")
-            telegram.send_message(chat["id"], "Jeg kunne ikke hente billedet — prøv igen.")
-            _notify_leader(f"Foto-fejl: {e}")
-            return {"ok": True}
         if vil_gemme and m_sag:
-            # Upload til sagens Dokumentation-fane (jun maa kun paa egne sager)
-            if db.get_meta("aura_pauseret") == "1":
-                telegram.send_message(chat["id"], "⏸ Aura er sat på pause af lederen — jeg må ikke "
-                                                  "gemme noget lige nu.")
-                return {"ok": True}
-            sag = m_sag.group(1)
-            from . import tools as _tools
-            afvist = _tools._ejer_eller_afvis(sag, {"telegram_id": from_id, "navn": user["navn"],
-                                                    "rolle": user["rolle"]})
-            if afvist:
-                telegram.send_message(chat["id"], afvist.get("resultat") or "Afvist.")
-                return {"ok": True}
-            try:
-                from . import os_graphql as os_gql
-                from .config import now_local
-                navn = f"aura_{now_local().strftime('%Y%m%d_%H%M%S')}.jpg"
-                _up = os_gql.upload_case_document(sag, navn, data, description=caption)
-                try:
-                    db.log_handling(from_id, user["navn"], user["rolle"],
-                                    "foto gemt på sag", f"sag {sag}: {navn}",
-                                    ref_type="dokument", ref_id=(_up or {}).get("id"))
-                except Exception:
-                    pass
-                telegram.send_message(chat["id"], f"📎 Billedet er gemt under Dokumentation på sag {sag}.")
-            except Exception as e:
-                log.exception("dokument-upload-fejl")
-                telegram.send_message(chat["id"], f"Kunne ikke gemme billedet på sag {sag} — prøv igen.")
-                _notify_leader(f"Dokument-upload-fejl: {e}")
+            _gem_foto_paa_sag(chat["id"], from_id, user, msg["photo"][-1]["file_id"],
+                              m_sag.group(1), caption)
             return {"ok": True}
         if vil_gemme and not m_sag:
+            _afventende_foto[str(chat["id"])] = (msg["photo"][-1]["file_id"], _time.time())
             telegram.send_message(chat["id"], "Hvilken sag skal billedet gemmes på? "
-                                              "Skriv fx 'gem på sag 132' som billedtekst.")
+                                              "Svar bare med sagsnummeret (fx 132).")
             return {"ok": True}
         # Stregkode-scanning
         try:
+            data = telegram.download_file(msg["photo"][-1]["file_id"])
             from . import stregkode
             kode = stregkode.find_stregkode(data)
         except Exception as e:
@@ -234,6 +234,19 @@ async def telegram_webhook(secret: str, request: Request):
             return {"ok": True}
     else:
         return {"ok": True}
+
+    # Venter et foto på et sagsnummer? Så er "132" / "gem på sag 132" svaret på DET.
+    afv_foto = _afventende_foto.get(str(chat["id"]))
+    if afv_foto and _time.time() - afv_foto[1] < 600:
+        tl = text.strip().lower()
+        mnum = re.fullmatch(r"(\d{1,6})", tl) or (re.search(r"sag\w*\.?\s*(\d{1,6})", tl)
+                                                   if len(tl) < 60 and ("gem" in tl or "sag" in tl) else None)
+        if mnum:
+            _afventende_foto.pop(str(chat["id"]), None)
+            _gem_foto_paa_sag(chat["id"], from_id, user, afv_foto[0], mnum.group(1))
+            return {"ok": True}
+    elif afv_foto:
+        _afventende_foto.pop(str(chat["id"]), None)   # udløbet
 
     # Menu-kommandoer (kun leder) — virker både skrevet og talt (fx "menu", "nye ordrer")
     if user["rolle"] == "pro" and menu.try_command(chat["id"], from_id, text):

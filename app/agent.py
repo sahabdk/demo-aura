@@ -152,6 +152,7 @@ def run_agent(ctx: dict, user_message: str, max_steps: int = 6) -> str:
     if OPENAI_MODEL.startswith(("gpt-5", "o1", "o3", "o4")):
         kwargs["reasoning_effort"] = OPENAI_REASONING
 
+    udfoert = set()   # (vaerktoej, argumenter) der allerede er koert i DETTE svar
     for _ in range(max_steps):
         resp = client.chat.completions.create(messages=messages, **kwargs)
         msg = resp.choices[0].message
@@ -168,7 +169,14 @@ def run_agent(ctx: dict, user_message: str, max_steps: int = 6) -> str:
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
-            result = tools.call_tool(tc.function.name, args, ctx)
+            noegle = (tc.function.name, json.dumps(args, sort_keys=True, ensure_ascii=False))
+            if tc.function.name in tools.MUTERENDE and noegle in udfoert:
+                # samme aendrende handling igen i samme svar -> bloker gentagelsen
+                result = {"resultat": "Denne handling er ALLEREDE udført. Kald den ikke igen — "
+                                      "giv brugeren dit endelige svar nu."}
+            else:
+                udfoert.add(noegle)
+                result = tools.call_tool(tc.function.name, args, ctx)
             messages.append({
                 "role": "tool", "tool_call_id": tc.id,
                 "content": json.dumps(result, ensure_ascii=False),

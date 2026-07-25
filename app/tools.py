@@ -828,6 +828,13 @@ def besked_til_leder(args, ctx):
     from .config import LEADER_GROUP_CHAT_ID
     if not LEADER_GROUP_CHAT_ID:
         return {"fejl": "leder-chatten er ikke sat op endnu"}
+    # Dubletvagt: praecis samme besked inden for 10 min sendes ikke igen
+    import hashlib, time as _t
+    fingeraftryk = hashlib.sha256(f"{ctx.get('telegram_id')}:{tekst}".encode()).hexdigest()[:16]
+    sidste = db.get_meta("leder_besked_" + fingeraftryk)
+    if sidste and _t.time() - float(sidste) < 600:
+        return {"resultat": "Beskeden er ALLEREDE sendt til lederen. Send den ikke igen."}
+    db.set_meta("leder_besked_" + fingeraftryk, _t.time())
     from . import telegram as _tg
     _tg.send_leader(LEADER_GROUP_CHAT_ID, f"💬 Besked fra {ctx.get('navn') or 'medarbejder'}: {tekst}")
     return {"resultat": "Beskeden er sendt til lederen"}
