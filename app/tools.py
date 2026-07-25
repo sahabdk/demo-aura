@@ -311,8 +311,30 @@ def saet_rykker_niveau(args, ctx):
 
 
 def husk_aftale(args, ctx):
-    db.add_appointment(ctx["telegram_id"], args.get("kunde"), args.get("opgave"), args["start"])
-    return {"resultat": f"Husket: {args.get('opgave')} ({args['start']})"}
+    """Gem en aftale/paamindelse. Angives 'medarbejder', gemmes den paa DEN person,
+    saa morgen-oversigt og paamindelser gaar til dem - ikke til den der oprettede."""
+    modtager_tid = ctx["telegram_id"]
+    modtager_navn = None
+    navn = (args.get("medarbejder") or "").strip()
+    if navn:
+        nl = navn.lower()
+        kandidat = None
+        for u in db.all_users():
+            if nl in (u.get("navn") or "").lower():
+                kandidat = u
+                break
+        if not kandidat:   # proev via ordrestyring-id (taler-/stavefejl-tolerant)
+            mid = _find_user_id(navn)
+            if mid:
+                kandidat = next((u for u in db.all_users()
+                                 if str(u.get("os_user_id") or "") == str(mid)), None)
+        if not kandidat:
+            return {"resultat": f"Jeg kunne ikke finde '{navn}' blandt Telegram-brugerne, saa "
+                                "paamindelsen er IKKE oprettet. Tjek navnet med 'vis medarbejdere'."}
+        modtager_tid, modtager_navn = kandidat["telegram_id"], kandidat.get("navn")
+    db.add_appointment(modtager_tid, args.get("kunde"), args.get("opgave"), args["start"])
+    hvem = f" - paamindelsen sendes til {modtager_navn}" if modtager_navn else ""
+    return {"resultat": f"Husket: {args.get('opgave')} ({args['start']}){hvem}"}
 
 
 def se_aftaler(args, ctx):
@@ -1086,9 +1108,14 @@ TOOLS = [
         "func": husk_aftale, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "husk_aftale",
-            "description": "Gem en aftale. start = ISO ÅÅÅÅ-MM-DDTHH:mm:ss (brug T08:00:00 hvis intet klokkeslæt).",
+            "description": "Gem en PERSONLIG aftale/paamindelse. start = ISO ÅÅÅÅ-MM-DDTHH:mm:ss "
+                           "(brug T08:00:00 hvis intet klokkeslæt). VIGTIGT: er paamindelsen til en "
+                           "ANDEN medarbejder (fx 'mind Dmitri om...'), SKAL 'medarbejder' udfyldes - "
+                           "saa faar DE paamindelsen, ikke den der beder om det. Skal der planlaegges "
+                           "ARBEJDE paa en sag, brug planlaeg_sag i stedet.",
             "parameters": {"type": "object", "properties": {
-                "kunde": {"type": "string"}, "opgave": {"type": "string"}, "start": {"type": "string"}},
+                "kunde": {"type": "string"}, "opgave": {"type": "string"}, "start": {"type": "string"},
+                "medarbejder": {"type": "string"}},
                 "required": ["opgave", "start"]},
         }},
     },
