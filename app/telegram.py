@@ -199,10 +199,11 @@ def synthesize_voice(text: str) -> bytes:
     lyder naturligt på dansk. gpt-4o-*-tts understøtter en tone-instruktion."""
     kwargs = dict(model=OPENAI_TTS_MODEL, voice=OPENAI_TTS_VOICE,
                   input=_til_tale(text), response_format="opus")
-    _DEFAULT_TONE = ("Du taler dansk. Lyd som en varm, rolig og venlig kollega på et "
-                     "VVS-kontor: naturligt tempo, små pauser, let smil i stemmen. "
-                     "Ikke robotagtig og ikke overdrevent entusiastisk. "
-                     "Udtal navne og tal tydeligt på dansk.")
+    _DEFAULT_TONE = ("Du er en dansk kvinde der taler helt naturligt i en telefonsamtale "
+                     "med en kollega. Afslappet hverdagsdansk, levende og varieret betoning, "
+                     "naturlige mikropauser og små tryk på de vigtige ord — aldrig monotont, "
+                     "aldrig oplæst, aldrig som en telefonsvarer. Let smil i stemmen, roligt "
+                     "taletempo. Udtal tal og navne tydeligt, men naturligt flydende.")
     if "gpt-4o" in OPENAI_TTS_MODEL:
         kwargs["instructions"] = OPENAI_TTS_INSTRUCTIONS or _DEFAULT_TONE
     resp = _client.audio.speech.create(**kwargs)

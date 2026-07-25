@@ -319,6 +319,11 @@ async def telegram_webhook(secret: str, request: Request):
                         f"kort i stedet for at oprette noget.) {text}")
 
     ctx = {"telegram_id": from_id, "navn": user["navn"], "rolle": user["rolle"]}
+    if var_tale:
+        text = ("(TALT besked - dit svar bliver læst HØJT. Svar som i en naturlig samtale: "
+                "flydende, korte sætninger, varmt og direkte. INGEN lister, bindestreger, "
+                "parenteser eller opremsninger - væv det ind i almindelige sætninger. "
+                "Max 2-3 sætninger medmindre der bedes om mere.) " + text)
     try:
         svar = run_agent(ctx, text)
     except Exception as e:
