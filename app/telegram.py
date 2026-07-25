@@ -144,8 +144,8 @@ def _u1000(n):
     if n < 100:
         return _u100(n)
     h, r = n // 100, n % 100
-    s = ("et" if h == 1 else _ENER[h]) + "hundrede"
-    return s if r == 0 else s + "og" + _u100(r)
+    s = ("et" if h == 1 else _ENER[h]) + " hundrede"
+    return s if r == 0 else s + " og " + _u100(r)
 
 
 def _tal_til_ord(n):
@@ -153,7 +153,7 @@ def _tal_til_ord(n):
         return _u1000(n)
     if n < 1000000:
         t, r = n // 1000, n % 1000
-        s = ("et" if t == 1 else _u1000(t)) + "tusind"
+        s = ("et" if t == 1 else _u1000(t)) + " tusind"
         return s if r == 0 else s + (" og " if r < 100 else " ") + _u1000(r)
     return " ".join(_ENER[int(c)] for c in str(n))   # store tal (fx telefon) ciffer for ciffer
 
