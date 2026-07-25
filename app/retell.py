@@ -54,6 +54,7 @@ def inbound_vars(fra_nummer):
     if not k:
         return {"kunde_fundet": "nej", "navn": "", "adresse": "", "postnummer": "", "by": ""}
     return {"kunde_fundet": "ja",
+            "kundenummer": str(k.get("customer_number") or ""),
             "navn": k.get("customer_name") or "",
             "adresse": k.get("customer_address") or "",
             "postnummer": str(k.get("customer_postalcode") or ""),
@@ -96,6 +97,8 @@ def haandter_afsluttet_opkald(payload):
     linjer = ["🚨 AKUT — telefonbesked fra AI-Aura:" if akut else "📞 Telefonbesked fra AI-Aura:",
               f"Kunde: {navn or 'ukendt navn'}",
               f"Telefon: {fra or 'skjult nummer'}"]
+    if kendt and dyn.get("kundenummer"):
+        linjer.append(f"Kundenr.: {dyn.get('kundenummer')} (kunden FINDES i ordrestyring)")
     if adresse:
         linjer.append(f"Adresse: {adresse}")
     elif kendt:

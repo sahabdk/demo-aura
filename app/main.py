@@ -238,12 +238,13 @@ async def telegram_webhook(secret: str, request: Request):
             # Svar på en telefonbesked: giv agenten ALLE oplysningerne fra den
             text = ("(Brugeren svarer på denne telefonbesked fra telefon-agenten:\n---\n"
                     + rt[:700] + "\n---\n"
-                    "Brug oplysningerne fra beskeden DIREKTE: kundens navn, telefonnummer, adresse "
-                    "og selve beskeden. Skal der oprettes en sag: find kunden med soeg_kunde (søg "
-                    "gerne på telefonnummeret eller navnet fra beskeden) — findes kunden ikke, "
-                    "opret kunden først med navn/adresse/telefon fra beskeden. Brug beskedens "
-                    "indhold som sagens beskrivelse. Nævner brugeren en medarbejder, så tildel "
-                    "sagen til vedkommende med tildel_sag. Spørg KUN om det der reelt mangler.) "
+                    "Brug oplysningerne fra beskeden DIREKTE. VIGTIGST: Står der 'Kundenr.:' i "
+                    "beskeden, FINDES kunden allerede i ordrestyring — brug DET kundenummer direkte "
+                    "til opret_sag, og opret ALDRIG en ny kunde. Kun hvis der IKKE står et kundenr. "
+                    "(ukendt kunde): find kunden med soeg_kunde på telefonnummer/navn, og opret den "
+                    "kun hvis søgningen intet giver. Brug beskedens indhold som sagens beskrivelse. "
+                    "Nævner brugeren en medarbejder, så tildel sagen med tildel_sag. Spørg KUN om "
+                    "det der reelt mangler.) "
                     + text)
         else:
             m = re.search(r"[Ss]ag\s+(\d+)", rt)
