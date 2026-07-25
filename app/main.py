@@ -135,6 +135,11 @@ def _gem_foto_paa_sag(chat_id, from_id, user, file_id, sag, caption=""):
         except Exception:
             pass
         telegram.send_message(chat_id, f"📎 Billedet er gemt under Dokumentation på sag {sag}.")
+        try:   # gem i samtalehukommelsen, saa "sagen" bagefter betyder DENNE sag
+            db.save_message(from_id, "user", f"(Sendte et foto{': ' + caption if caption else ''})")
+            db.save_message(from_id, "assistant", f"Billedet er gemt under Dokumentation på sag {sag}.")
+        except Exception:
+            pass
     except Exception as e:
         log.exception("dokument-upload-fejl")
         telegram.send_message(chat_id, f"Kunne ikke gemme billedet på sag {sag} — prøv igen.")
