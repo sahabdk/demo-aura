@@ -126,7 +126,7 @@ def status_vagt():
                 except Exception as e:
                     print(f"[status_vagt] kunne ikke skifte sag {nr}: {str(e)[:150]}", flush=True)
         if skiftet and LEADER_GROUP_CHAT_ID:
-            telegram.send_message(LEADER_GROUP_CHAT_ID,
+            telegram.send_leader(LEADER_GROUP_CHAT_ID,
                                   "🔄 Automatisk status: sag " + ", ".join(skiftet)
                                   + " er nu Igangværende (planlagt tid nået).")
     except Exception as e:

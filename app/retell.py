@@ -121,7 +121,7 @@ def haandter_afsluttet_opkald(payload):
             print(f"[retell] sms-fejl: {str(e)[:200]}", flush=True)
 
     if LEADER_GROUP_CHAT_ID:
-        telegram.send_message(LEADER_GROUP_CHAT_ID, "\n".join(linjer))
+        telegram.send_leader(LEADER_GROUP_CHAT_ID, "\n".join(linjer))
     try:
         db.log_handling("", "AI-Aura (telefon)", "system", "telefonbesked modtaget",
                         f"{navn or 'ukendt'} / {fra}: {resume[:200]}")
@@ -166,7 +166,7 @@ def adr_submit(token, form):
     adresse = f"{(form.get('adresse') or '').strip()}, {(form.get('postnr') or '').strip()} {(form.get('by') or '').strip()}"
     db.mark_adr_done(token, navn, adresse)
     if LEADER_GROUP_CHAT_ID:
-        telegram.send_message(LEADER_GROUP_CHAT_ID,
+        telegram.send_leader(LEADER_GROUP_CHAT_ID,
                               f"🏠 Adresse modtaget fra telefonkunde:\n{navn}\n{adresse}\nTelefon: {r.get('telefon')}")
     try:
         db.log_handling("", "AI-Aura (telefon)", "system", "adresse modtaget",

@@ -829,7 +829,7 @@ def besked_til_leder(args, ctx):
     if not LEADER_GROUP_CHAT_ID:
         return {"fejl": "leder-chatten er ikke sat op endnu"}
     from . import telegram as _tg
-    _tg.send_message(LEADER_GROUP_CHAT_ID, f"💬 Besked fra {ctx.get('navn') or 'medarbejder'}: {tekst}")
+    _tg.send_leader(LEADER_GROUP_CHAT_ID, f"💬 Besked fra {ctx.get('navn') or 'medarbejder'}: {tekst}")
     return {"resultat": "Beskeden er sendt til lederen"}
 
 
@@ -1249,7 +1249,7 @@ def call_tool(name: str, args: dict, ctx: dict):
                     from .config import LEADER_GROUP_CHAT_ID
                     from . import telegram as _tg
                     if LEADER_GROUP_CHAT_ID:
-                        _tg.send_message(LEADER_GROUP_CHAT_ID,
+                        _tg.send_leader(LEADER_GROUP_CHAT_ID,
                                          f"🛑 Aura har sat sig selv på pause: {ctx.get('navn')} har lavet "
                                          f"{n} ændringer på 1 time (grænse {MAX_PR_TIME}). Tjek handlingsloggen "
                                          "og skriv 'aura start' for at fortsætte.")

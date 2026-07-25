@@ -15,6 +15,17 @@ def send_message(chat_id, text: str):
     requests.get(f"{API}/sendMessage", params={"chat_id": chat_id, "text": text}, timeout=30)
 
 
+def send_leader(chat_id, text: str):
+    """Send en notifikation til lederen OG gem den i samtalehukommelsen,
+    saa Aura forstaar opfoelgende svar som 'ja det maa han gerne'."""
+    send_message(chat_id, text)
+    try:
+        from . import db
+        db.save_message(chat_id, "assistant", text)
+    except Exception:
+        pass
+
+
 def send_chat_action(chat_id, action: str = "typing"):
     """Vis 'skriver…' (eller 'optager…') mens vi arbejder — bedre oplevet svartid."""
     try:
