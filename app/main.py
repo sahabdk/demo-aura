@@ -154,8 +154,14 @@ async def telegram_webhook(secret: str, request: Request):
         # Foto: enten stregkode-scanning af en vare ELLER "gem billedet paa sag N" (Dokumentation)
         caption = (msg.get("caption") or "").strip()
         cl = caption.lower()
-        m_sag = re.search(r"sag\s+(\d+)", cl)
-        vil_gemme = any(w in cl for w in ("dok", "gem", "upload", "vedhæft", "vedhaeft", "arkiv"))
+        # "sag 132", "sagen 132", "sagnr. 132", "sag132" - alle bøjninger accepteres
+        m_sag = re.search(r"sag\w*\.?\s*(\d+)", cl)
+        vil_gemme = any(w in cl for w in ("dok", "gem", "upload", "vedhæft", "vedhaeft", "arkiv", "billed"))
+        if vil_gemme and not m_sag:
+            # intet nummer i billedteksten -> arv sagsnummeret fra beskeden der svares på
+            rep = msg.get("reply_to_message") or {}
+            rep_tekst = f"{rep.get('text') or ''} {rep.get('caption') or ''}"
+            m_sag = re.search(r"[Ss]ag\w*\.?\s*(\d+)", rep_tekst)
         try:
             data = telegram.download_file(msg["photo"][-1]["file_id"])
         except Exception as e:
@@ -192,6 +198,10 @@ async def telegram_webhook(secret: str, request: Request):
                 log.exception("dokument-upload-fejl")
                 telegram.send_message(chat["id"], f"Kunne ikke gemme billedet på sag {sag} — prøv igen.")
                 _notify_leader(f"Dokument-upload-fejl: {e}")
+            return {"ok": True}
+        if vil_gemme and not m_sag:
+            telegram.send_message(chat["id"], "Hvilken sag skal billedet gemmes på? "
+                                              "Skriv fx 'gem på sag 132' som billedtekst.")
             return {"ok": True}
         # Stregkode-scanning
         try:
