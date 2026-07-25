@@ -41,6 +41,50 @@ async def ref_post(token: str, request: Request):
     return reference.submit_reference(token, form.get("reference", ""))
 
 
+# ---------- Retell-telefonagent + adresse-portal ----------
+
+@app.post("/retell/{secret}/inbound")
+async def retell_inbound(secret: str, request: Request):
+    """Kaldes af Retell FØR samtalen: slå opkalderen op og returnér dynamiske variabler."""
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    data = await request.json()
+    fra = ((data.get("call_inbound") or {}).get("from_number")) or ""
+    from . import retell as _retell
+    variabler = _retell.inbound_vars(fra)
+    print(f"[retell] inbound {fra} -> kunde_fundet={variabler.get('kunde_fundet')}", flush=True)
+    return {"call_inbound": {"dynamic_variables": variabler}}
+
+
+@app.post("/retell/{secret}/webhook")
+async def retell_webhook(secret: str, request: Request):
+    """Kaldes af Retell efter opkaldet (event: call_analyzed)."""
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    data = await request.json()
+    if data.get("event") == "call_analyzed":
+        from . import retell as _retell
+        try:
+            _retell.haandter_afsluttet_opkald(data)
+        except Exception as e:
+            log.exception("retell-webhook-fejl")
+            _notify_leader(f"Telefon-webhook-fejl: {e}")
+    return {"ok": True}
+
+
+@app.get("/adr/{token}", response_class=HTMLResponse)
+def adr_get(token: str):
+    from . import retell as _retell
+    return _retell.adr_side(token)
+
+
+@app.post("/adr/{token}", response_class=HTMLResponse)
+async def adr_post(token: str, request: Request):
+    from . import retell as _retell
+    form = await request.form()
+    return _retell.adr_submit(token, form)
+
+
 _seen_updates = []   # de seneste update_id'er vi har behandlet (mod Telegram-genforsøg -> dubletter)
 
 

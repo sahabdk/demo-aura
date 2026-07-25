@@ -57,6 +57,14 @@ def init_db():
                 ref_id      TEXT,                          -- objektets id i ordrestyring
                 fortrudt    INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS adr_anmodninger (
+                token      TEXT PRIMARY KEY,
+                telefon    TEXT,
+                navn       TEXT,
+                adresse    TEXT,
+                status     TEXT NOT NULL DEFAULT 'pending',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE TABLE IF NOT EXISTS meta (
                 k TEXT PRIMARY KEY,
                 v TEXT
@@ -309,6 +317,26 @@ def get_last_seen_order(telegram_id):
 
 def set_last_seen_order(telegram_id, ts):
     set_meta(f"sidst_ordre:{telegram_id}", int(ts))
+
+
+# ---- Adresse-anmodninger (telefon-agentens SMS-link) ----
+
+def create_adr_request(token, telefon, navn=""):
+    with conn() as c:
+        c.execute("INSERT OR IGNORE INTO adr_anmodninger(token, telefon, navn) VALUES(?,?,?)",
+                  (token, str(telefon or ""), navn or ""))
+
+
+def get_adr_request(token):
+    with conn() as c:
+        row = c.execute("SELECT * FROM adr_anmodninger WHERE token=?", (token,)).fetchone()
+        return dict(row) if row else None
+
+
+def mark_adr_done(token, navn, adresse):
+    with conn() as c:
+        c.execute("UPDATE adr_anmodninger SET status='done', navn=?, adresse=? WHERE token=?",
+                  (navn or "", adresse or "", token))
 
 
 # ---- Referenceanmodninger (kundeportal) ----
