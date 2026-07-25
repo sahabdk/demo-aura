@@ -244,7 +244,9 @@ async def telegram_webhook(secret: str, request: Request):
                     "(ukendt kunde): find kunden med soeg_kunde på telefonnummer/navn, og opret den "
                     "kun hvis søgningen intet giver. Brug beskedens indhold som sagens beskrivelse. "
                     "Nævner brugeren en medarbejder, så tildel sagen med tildel_sag. Spørg KUN om "
-                    "det der reelt mangler.) "
+                    "det der reelt mangler, og tilbyd INGEN ekstra-handlinger: er kunden kendt "
+                    "(Kundenr. i beskeden), er telefonnummeret allerede registreret — tilbyd "
+                    "ALDRIG at gemme det igen. Afslut med en kort bekræftelse.) "
                     + text)
         else:
             m = re.search(r"[Ss]ag\s+(\d+)", rt)
