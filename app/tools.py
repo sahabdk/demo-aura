@@ -285,6 +285,21 @@ def send_paamindelse_email(args, ctx):
 
 
 def forfaldne_fakturaer(args, ctx):
+    # 1) e-conomic = bogholderiets sandhed om betalinger (hvis sat op)
+    try:
+        from . import economic
+        if economic.klar():
+            out = []
+            for r in economic.overdue_invoices():
+                knr = r.get("kundenummer")
+                out.append({"kunde": r.get("kunde"), "kundenummer": knr,
+                            "faktura": r.get("fakturanummer"), "beloeb": r.get("beloeb"),
+                            "forfald": r.get("forfald"), "dage_forsinket": r.get("dage_forsinket"),
+                            "antal_rykkere": db.get_reminder_count(knr)})
+            return {"antal": len(out), "kilde": "e-conomic", "fakturaer": out}
+    except Exception as e:
+        print(f"[forfaldne] e-conomic fejlede - falder tilbage til ordrestyring: {str(e)[:200]}", flush=True)
+    # 2) fallback: ordrestyrings fakturaliste
     rows = os_api.overdue_unpaid_invoices()
     out = []
     for r in rows:

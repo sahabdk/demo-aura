@@ -382,6 +382,25 @@ def vis_graphql_createhour(chat_id):
     telegram.send_message(chat_id, ("🔧 " + "\n".join(linjer))[:3800])
 
 
+def vis_economic_test(chat_id):
+    """DEBUG: tjek e-conomic-forbindelsen og taeel forfaldne fakturaer."""
+    from . import economic
+    if not economic.klar():
+        telegram.send_message(chat_id, "e-conomic er ikke sat op endnu: tilfoej ECONOMIC_GRANT_TOKEN "
+                                       "(og evt. ECONOMIC_APP_TOKEN) i Railway -> Variables.")
+        return
+    try:
+        info = economic.self_test()
+        antal = len(economic.overdue_invoices())
+    except Exception as e:
+        print(f"[economic_test] {str(e)[:300]}", flush=True)
+        telegram.send_message(chat_id, f"e-conomic-fejl: {str(e)[:250]}")
+        return
+    telegram.send_message(chat_id, f"✅ e-conomic forbundet: {info.get('firma')} "
+                                   f"(aftale {info.get('aftale')}). "
+                                   f"Forfaldne ubetalte fakturaer lige nu: {antal}.")
+
+
 # ---------- tekst/stemme-kommandoer ----------
 
 def try_command(chat_id, telegram_id, text):
@@ -398,6 +417,9 @@ def try_command(chat_id, telegram_id, text):
             pass
         telegram.send_message(chat_id, "⏸ Aura er sat på pause: alle ændringer er blokeret, "
                                        "indtil du skriver 'aura start'. Læsning og søgning virker stadig.")
+        return True
+    if "economic" in t and any(w in t for w in ("test", "tjek", "status")):
+        vis_economic_test(chat_id)
         return True
     if t in ("aura start", "start aura", "aura kør", "aura koer"):
         db.set_meta("aura_pauseret", "0")

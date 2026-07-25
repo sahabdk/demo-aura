@@ -59,7 +59,8 @@ def faktura_overview():
     Viser kort med detaljer + 'Send rykker'-knap pr. faktura (samme som menuen)."""
     if not LEADER_GROUP_CHAT_ID:
         return
-    if not os_api.overdue_unpaid_invoices():
+    from .tools import forfaldne_fakturaer
+    if not forfaldne_fakturaer({}, {}).get("fakturaer"):
         return
     from . import menu
     telegram.send_message(LEADER_GROUP_CHAT_ID, "God morgen! Her er ugens forfaldne fakturaer:")

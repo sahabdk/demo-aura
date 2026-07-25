@@ -48,3 +48,7 @@ REF_REMINDER_DAGE = int(os.environ.get("REF_REMINDER_DAGE", "3"))
 REF_MAX_MAILS = int(os.environ.get("REF_MAX_MAILS", "2"))
 # Hvor mange dage tilbage scanningen kigger efter sager (created_at-filter)
 REF_SCAN_DAGE = int(os.environ.get("REF_SCAN_DAGE", "14"))
+
+# e-conomic (forfaldne fakturaer fra bogholderiet)
+ECONOMIC_APP_TOKEN = os.getenv("ECONOMIC_APP_TOKEN", "")
+ECONOMIC_GRANT_TOKEN = os.getenv("ECONOMIC_GRANT_TOKEN", "")
