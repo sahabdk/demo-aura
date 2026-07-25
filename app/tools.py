@@ -241,16 +241,45 @@ def afslut_sag(args, ctx):
 
 def send_paamindelse_email(args, ctx):
     nr = str(args["kundenummer"])
-    debtor = os_api.get_debtor(nr)
+    try:
+        debtor = os_api.get_debtor(nr) or {}
+    except Exception:
+        debtor = {}
     email = debtor.get("customer_email")
     navn = debtor.get("customer_name")
+    if not email:   # fallback: e-conomic-kundekortet
+        try:
+            from . import economic
+            if economic.klar():
+                email = economic.customer_email(nr)
+        except Exception as _e:
+            print(f"[rykker] e-conomic email-opslag fejlede: {str(_e)[:150]}", flush=True)
     if not email:
-        return {"resultat": "kunden har ingen email - kan ikke sende rykker"}
+        return {"resultat": "kunden har ingen email i hverken ordrestyring eller e-conomic - "
+                            "kan ikke sende rykker"}
+    navn = navn or f"kunde {nr}"
 
     # Find kundens forfaldne faktura(er) -> beløb, forfald, dage forsinket, fakturanr i mailen
     beloeb = forfald = fakturanr = None
     dage_forsinket = None
     try:
+        # e-conomic foerst (samme kilde som listen), ellers ordrestyring
+        from . import economic
+        if economic.klar():
+            mine_ec = [r for r in economic.overdue_invoices()
+                       if str(r.get("kundenummer")) == nr]
+            if mine_ec:
+                total = sum(float(r.get("beloeb") or 0) for r in mine_ec)
+                beloeb = f"{total:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                aeldste = min((r.get("forfald") or "9999") for r in mine_ec)
+                try:
+                    forfald = datetime.fromisoformat(aeldste).strftime("%d-%m-%Y")
+                    dage_forsinket = max(0, (datetime.now() - datetime.fromisoformat(aeldste)).days)
+                except (ValueError, TypeError):
+                    forfald = aeldste
+                fakturanr = ", ".join(str(r.get("fakturanummer")) for r in mine_ec
+                                      if r.get("fakturanummer"))
+            raise StopIteration   # spring ordrestyring-delen over
         mine = [r for r in os_api.overdue_unpaid_invoices()
                 if str(r.get("customer_number")) == nr]
         if mine:
@@ -262,6 +291,8 @@ def send_paamindelse_email(args, ctx):
                 forfald = datetime.fromtimestamp(aeldste).strftime("%d-%m-%Y")
                 dage_forsinket = max(0, int((datetime.now().timestamp() - aeldste) / 86400))
             fakturanr = ", ".join(str(r.get("invoice_number")) for r in mine if r.get("invoice_number"))
+    except StopIteration:
+        pass   # e-conomic-detaljerne er allerede udfyldt
     except Exception:
         pass
 

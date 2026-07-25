@@ -67,3 +67,12 @@ def overdue_invoices():
             "dage_forsinket": dage,
         })
     return ud
+
+
+def customer_email(customer_number):
+    """Kundens e-mail fra e-conomic (fallback naar ordrestyring mangler den)."""
+    try:
+        d = _get(f"/customers/{int(customer_number)}")
+    except Exception:
+        return None
+    return d.get("email") or None
