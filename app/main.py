@@ -329,13 +329,15 @@ async def telegram_webhook(secret: str, request: Request):
     # Talte du til hende -> svar med tale; ellers tekst (sparer data ved skrift)
     if var_tale:
         try:
-            telegram.send_voice(chat["id"], telegram.synthesize_voice(svar))
+            telegram.send_voice(chat["id"], telegram.synthesize_voice(svar),
+                                reply_to=msg.get("message_id"))
         except Exception as e:
             log.exception("tts-fejl")
-            telegram.send_message(chat["id"], svar)  # fald tilbage til tekst
+            telegram.send_message(chat["id"], svar, reply_to=msg.get("message_id"))
             _notify_leader(f"TTS-fejl: {e}")
     else:
-        telegram.send_message(chat["id"], svar)
+        # citér spørgsmålet, så svaret altid kan kobles til det (svar kan komme forsinket)
+        telegram.send_message(chat["id"], svar, reply_to=msg.get("message_id"))
     return {"ok": True}
 
 

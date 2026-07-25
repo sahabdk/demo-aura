@@ -11,8 +11,12 @@ FILE_API = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}"
 _client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-def send_message(chat_id, text: str):
-    requests.get(f"{API}/sendMessage", params={"chat_id": chat_id, "text": text}, timeout=30)
+def send_message(chat_id, text: str, reply_to=None):
+    params = {"chat_id": chat_id, "text": text}
+    if reply_to:
+        params["reply_to_message_id"] = reply_to
+        params["allow_sending_without_reply"] = True
+    requests.get(f"{API}/sendMessage", params=params, timeout=30)
 
 
 def send_leader(chat_id, text: str):
@@ -191,7 +195,11 @@ def synthesize_voice(text: str) -> bytes:
     return resp.content
 
 
-def send_voice(chat_id, audio: bytes):
+def send_voice(chat_id, audio: bytes, reply_to=None):
     """Send et stemme-svar (voice note) til chatten."""
-    requests.post(f"{API}/sendVoice", data={"chat_id": chat_id},
+    data = {"chat_id": chat_id}
+    if reply_to:
+        data["reply_to_message_id"] = reply_to
+        data["allow_sending_without_reply"] = True
+    requests.post(f"{API}/sendVoice", data=data,
                   files={"voice": ("svar.ogg", audio, "audio/ogg")}, timeout=60)
