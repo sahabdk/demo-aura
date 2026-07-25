@@ -22,12 +22,18 @@ def fuzzy_find_customers(query, limit=8, with_scores=False):
     if not q:
         return []
     tokens = [t for t in q.split() if len(t) >= 2]
+    # telefonnumre i soegningen: fjern +45/mellemrum saa de matcher hay's cifre
+    cifre = "".join(ch for ch in q if ch.isdigit())
+    if len(cifre) >= 8:
+        tokens.append(cifre[-8:])
     scored = []
     for d in os_api.all_debtors():
         name = _norm(d.get("customer_name"))
         addr = _norm(d.get("customer_address"))
         city = _norm(d.get("customer_city"))
-        hay = f"{name} {addr} {city}"
+        tlf = "".join(ch for ch in f"{d.get('customer_telephone') or ''} {d.get('customer_mobile') or ''}"
+                      if ch.isdigit())
+        hay = f"{name} {addr} {city} {tlf}"
         matched = sum(1 for t in tokens if t in hay)
         if q in name or q in addr or q in city:
             score = 1.0

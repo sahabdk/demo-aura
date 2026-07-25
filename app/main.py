@@ -233,14 +233,27 @@ async def telegram_webhook(secret: str, request: Request):
     # eksisterende sag — aldrig en ny sag. Kan vi læse sagsnummeret, giver vi det med.
     reply = msg.get("reply_to_message")
     if reply and reply.get("text"):
-        m = re.search(r"[Ss]ag\s+(\d+)", reply["text"])
-        if m:
-            text = (f"(Brugeren svarer på sag {m.group(1)} — beskeden er en TILFØJELSE til DEN sag, "
-                    f"ikke en ny sag.) {text}")
+        rt = reply["text"]
+        if "Telefonbesked fra AI-Aura" in rt or "Adresse modtaget" in rt:
+            # Svar på en telefonbesked: giv agenten ALLE oplysningerne fra den
+            text = ("(Brugeren svarer på denne telefonbesked fra telefon-agenten:\n---\n"
+                    + rt[:700] + "\n---\n"
+                    "Brug oplysningerne fra beskeden DIREKTE: kundens navn, telefonnummer, adresse "
+                    "og selve beskeden. Skal der oprettes en sag: find kunden med soeg_kunde (søg "
+                    "gerne på telefonnummeret eller navnet fra beskeden) — findes kunden ikke, "
+                    "opret kunden først med navn/adresse/telefon fra beskeden. Brug beskedens "
+                    "indhold som sagens beskrivelse. Nævner brugeren en medarbejder, så tildel "
+                    "sagen til vedkommende med tildel_sag. Spørg KUN om det der reelt mangler.) "
+                    + text)
         else:
-            text = ("(Brugeren svarer på en tidligere besked — det er en TILFØJELSE til en "
-                    "eksisterende sag, ALDRIG en ny sag. Er du i tvivl om hvilken sag, så spørg "
-                    f"kort i stedet for at oprette noget.) {text}")
+            m = re.search(r"[Ss]ag\s+(\d+)", rt)
+            if m:
+                text = (f"(Brugeren svarer på sag {m.group(1)} — beskeden er en TILFØJELSE til DEN sag, "
+                        f"ikke en ny sag.) {text}")
+            else:
+                text = ("(Brugeren svarer på en tidligere besked — det er en TILFØJELSE til en "
+                        "eksisterende sag, ALDRIG en ny sag. Er du i tvivl om hvilken sag, så spørg "
+                        f"kort i stedet for at oprette noget.) {text}")
 
     ctx = {"telegram_id": from_id, "navn": user["navn"], "rolle": user["rolle"]}
     try:
