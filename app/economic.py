@@ -4,7 +4,7 @@ Auth: to tokens i headers — X-AppSecretToken (app-nøgle) og X-AgreementGrantT
 (kundens adgang). Sættes i Railway som ECONOMIC_APP_TOKEN og ECONOMIC_GRANT_TOKEN.
 """
 import requests
-from datetime import date, datetime
+from datetime import datetime
 from .config import ECONOMIC_APP_TOKEN, ECONOMIC_GRANT_TOKEN
 
 BASE = "https://restapi.e-conomic.com"
@@ -39,11 +39,9 @@ def self_test():
 
 def overdue_invoices():
     """Bogførte fakturaer med restbeløb > 0 og overskredet forfaldsdato (= reelt ubetalte)."""
-    idag = date.today().isoformat()
     rows, side = [], 0
     while side < 10:   # sikkerhedsloft: max 10 sider a 1000
-        d = _get("/invoices/booked", params={
-            "filter": f"remainder$gt:0$and:dueDate$lt:{idag}",
+        d = _get("/invoices/overdue", params={
             "skippages": side, "pagesize": 1000,
         })
         batch = d.get("collection") or []
