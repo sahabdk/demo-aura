@@ -90,6 +90,28 @@ _seen_updates = []   # de seneste update_id'er vi har behandlet (mod Telegram-ge
 _afventende_foto = {}   # chat_id -> (file_id, tidspunkt): foto der venter på et sagsnummer
 
 
+def _foto_uden_nummer(chat_id, from_id, user, file_id, caption):
+    """Intet sagsnummer i billedteksten: proev at finde sagen ud fra adresse/kundenavn."""
+    sagsnr, forslag = None, []
+    try:
+        from . import tools as _tools
+        sagsnr, forslag = _tools.find_sag_ud_fra_tekst(caption)
+    except Exception:
+        log.exception("foto-adresseopslag-fejl")
+    if sagsnr:
+        _gem_foto_paa_sag(chat_id, from_id, user, file_id, str(sagsnr), caption)
+        return
+    _afventende_foto[str(chat_id)] = (file_id, _time.time())
+    if forslag:
+        linjer = [f"- sag {f['sagsnummer']}: {f['kunde']}, {f['adresse']} — {f['beskrivelse']}".rstrip(" —")
+                  for f in forslag]
+        telegram.send_message(chat_id, "Hvilken sag skal billedet gemmes på?\n" + "\n".join(linjer)
+                                       + "\nSvar bare med sagsnummeret.")
+    else:
+        telegram.send_message(chat_id, "Hvilken sag skal billedet gemmes på? "
+                                       "Svar bare med sagsnummeret (fx 132).")
+
+
 def _gem_foto_paa_sag(chat_id, from_id, user, file_id, sag, caption=""):
     """Hent fotoet fra Telegram og gem det i sagens Dokumentation (med alle tjek)."""
     if db.get_meta("aura_pauseret") == "1":
@@ -185,26 +207,26 @@ async def telegram_webhook(secret: str, request: Request):
         # Foto: enten stregkode-scanning af en vare ELLER "gem billedet paa sag N" (Dokumentation)
         caption = (msg.get("caption") or "").strip()
         cl = caption.lower()
-        # "sag 132", "sagen 132", "sagnr. 132", "sag132" - alle bøjninger accepteres
-        m_sag = re.search(r"sag\w*\.?\s*(\d+)", cl)
-        vil_gemme = any(w in cl for w in ("dok", "gem", "upload", "vedhæft", "vedhaeft", "arkiv", "billed"))
-        if vil_gemme and not m_sag:
-            # intet nummer i billedteksten -> arv sagsnummeret fra beskeden der svares på
+        fil_id = msg["photo"][-1]["file_id"]
+        # "sag/ordre 132" i alle bøjninger
+        m_sag = re.search(r"(?:sag|ordre)\w*\.?\s*(\d+)", cl)
+        vil_gemme = any(w in cl for w in ("dok", "gem", "upload", "vedhæft", "vedhaeft", "arkiv",
+                                          "billed", "foto"))
+        naevner_ordre = any(w in cl for w in ("tilføj", "tilfoej", "ordre", "sag"))
+        if (vil_gemme or naevner_ordre) and not m_sag:
+            # intet nummer -> arv evt. sagsnummer fra beskeden der svares på
             rep = msg.get("reply_to_message") or {}
             rep_tekst = f"{rep.get('text') or ''} {rep.get('caption') or ''}"
             m_sag = re.search(r"[Ss]ag\w*\.?\s*(\d+)", rep_tekst)
         if vil_gemme and m_sag:
-            _gem_foto_paa_sag(chat["id"], from_id, user, msg["photo"][-1]["file_id"],
-                              m_sag.group(1), caption)
+            _gem_foto_paa_sag(chat["id"], from_id, user, fil_id, m_sag.group(1), caption)
             return {"ok": True}
         if vil_gemme and not m_sag:
-            _afventende_foto[str(chat["id"])] = (msg["photo"][-1]["file_id"], _time.time())
-            telegram.send_message(chat["id"], "Hvilken sag skal billedet gemmes på? "
-                                              "Svar bare med sagsnummeret (fx 132).")
+            _foto_uden_nummer(chat["id"], from_id, user, fil_id, caption)
             return {"ok": True}
-        # Stregkode-scanning
+        # Stregkode-scanning (ellers)
         try:
-            data = telegram.download_file(msg["photo"][-1]["file_id"])
+            data = telegram.download_file(fil_id)
             from . import stregkode
             kode = stregkode.find_stregkode(data)
         except Exception as e:
@@ -213,10 +235,19 @@ async def telegram_webhook(secret: str, request: Request):
             _notify_leader(f"Stregkode-fejl: {e}")
             return {"ok": True}
         if not kode:
+            # Ingen stregkode - men naevner teksten en ordre/sag, saa var det nok et
+            # dokumentations-billede ("tilfoej til ordren paa torvet 6")
+            if m_sag:
+                _gem_foto_paa_sag(chat["id"], from_id, user, fil_id, m_sag.group(1), caption)
+                return {"ok": True}
+            if naevner_ordre:
+                _foto_uden_nummer(chat["id"], from_id, user, fil_id, caption)
+                return {"ok": True}
             telegram.send_message(chat["id"], "Jeg kunne ikke finde en stregkode på billedet. "
                                               "Prøv tættere på, i bedre lys, og hold koden fladt. "
                                               "Ville du gemme billedet på en sag, så skriv fx "
-                                              "'gem på sag 129' som billedtekst.")
+                                              "'gem på sag 129' eller 'gem på ordren hos [kunde/adresse]' "
+                                              "som billedtekst.")
             return {"ok": True}
         text = f"(Brugeren har scannet en vare-stregkode: {kode}.) "
         if caption:

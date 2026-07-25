@@ -120,6 +120,39 @@ def mine_sager(args, ctx):
     ]}
 
 
+_FOTO_STOPORD = {"tilføj", "tilfoej", "gem", "gemme", "billede", "billedet", "billed", "foto",
+                 "til", "på", "paa", "ordren", "ordre", "ordrer", "sagen", "sag", "sager",
+                 "dokumentation", "dok", "det", "dette", "her", "hos", "ved", "denne", "den",
+                 "upload", "vedhæft", "vedhaeft", "og", "med"}
+
+
+def find_sag_ud_fra_tekst(tekst, max_forslag=4):
+    """Find aabne sager ud fra fritekst (kundenavn/adresse), fx 'ordren paa torvet 6'.
+    Returnerer (sagsnummer|None, forslag): sagsnummer kun ved ENTYDIGT match."""
+    ord_ = [o for o in str(tekst or "").replace(",", " ").split()
+            if o.lower().strip(".!?") not in _FOTO_STOPORD]
+    soeg = " ".join(ord_).strip()
+    if len(soeg) < 3:
+        return None, []
+    hits = fuzzy_find_customers(soeg, limit=3, with_scores=True)
+    if not hits:
+        return None, []
+    alle_sager = os_api.cases_paged()
+    forslag = []
+    for score, d in hits:
+        knr = str(d.get("customer_number"))
+        for c in alle_sager:
+            if str(c.get("customer_number")) == knr and not os_api.is_closed(c):
+                forslag.append({"sagsnummer": c.get("case_number"),
+                                "kunde": d.get("customer_name"),
+                                "adresse": f"{d.get('customer_address') or ''}",
+                                "beskrivelse": (c.get("description") or "")[:60],
+                                "score": score})
+    if len(forslag) == 1 and forslag[0]["score"] >= 0.75:
+        return forslag[0]["sagsnummer"], forslag
+    return None, forslag[:max_forslag]
+
+
 def _ejer_eller_afvis(sagsnummer, ctx):
     """Returnerer en afvisnings-dict hvis en jun rører en sag der IKKE er tildelt dem.
     Lederen (pro) må alt -> None. Bruges af kommentar/redigér/færdigmeld."""
