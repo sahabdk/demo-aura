@@ -189,15 +189,20 @@ def set_reminder_count(kundenummer: str, antal: int):
 
 def add_appointment(telegram_id, kunde, opgave, start_iso):
     with conn() as c:
-        # Undgå dublet: samme bruger + samme opgave inden for 3 min af hinanden
+        # Undgå dubletter: samme bruger + (næsten) samme opgave + start inden for 3 min.
+        # Fuzzy-sammenligning fanger tale-varianter som "Ring til Thomas"/"Ringe til Thomas".
         try:
+            import difflib
             ny = datetime.fromisoformat(start_iso)
             for row in c.execute(
-                "SELECT start FROM aftaler WHERE telegram_id=? AND IFNULL(opgave,'')=IFNULL(?,'')",
-                (str(telegram_id), opgave),
+                "SELECT start, opgave FROM aftaler WHERE telegram_id=?", (str(telegram_id),)
             ).fetchall():
                 try:
-                    if abs((datetime.fromisoformat(row["start"]) - ny).total_seconds()) <= 180:
+                    if abs((datetime.fromisoformat(row["start"]) - ny).total_seconds()) > 180:
+                        continue
+                    a = (row["opgave"] or "").strip().lower()
+                    b = (opgave or "").strip().lower()
+                    if a == b or difflib.SequenceMatcher(None, a, b).ratio() >= 0.75:
                         return   # dublet -> opret ikke igen
                 except (ValueError, TypeError):
                     pass

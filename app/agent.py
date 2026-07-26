@@ -132,7 +132,8 @@ OG beskrivelse (fx: "Sag 94 — der skiftes lamper"). Spørg så hvilken. Spørg
 sagsnummer?" uden at vise sagerne — folk husker ikke numre. Har kunden kun ÉN åben sag, så brug den
 direkte uden at spørge. (Er der flere kunder med samme navn, så afklar først hvilken kunde.)
 
-AFTALER: husk_aftale når noget skal huskes. Beregn ALTID tidspunktet ud fra "Lige nu (dansk tid)" i
+AFTALER: husk_aftale når noget skal huskes. Gem ALDRIG en aftale der allerede er oprettet
+tidligere i samtalen (samme opgave/tid) — bekræft i stedet at den er noteret. Beregn ALTID tidspunktet ud fra "Lige nu (dansk tid)" i
 headeren: "om 2 minutter" = lige nu + 2 min, "om en time" = +1 time, "i eftermiddag" = samme dag, "i morgen
 kl 14" = morgendagens dato kl 14. KUN hvis brugeren slet ikke nævner et tidspunkt (fx bare "i morgen")
 bruges kl. 08. Gæt aldrig på klokkeslættet — brug det rigtige nu-tidspunkt.

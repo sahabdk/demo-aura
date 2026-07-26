@@ -15,9 +15,13 @@ log = logging.getLogger("aura.scheduler")
 
 
 def morning_digest():
-    today = now_local().strftime("%Y-%m-%d")
+    nu = now_local()
+    print(f"[morgen] morgen-oversigt koerer nu (serverens lokale tid: {nu:%Y-%m-%d %H:%M})", flush=True)
+    today = nu.strftime("%Y-%m-%d")
     for u in db.all_users():
-        rows = db.appointments_between(u["telegram_id"], today + "T00:00:00", today + "T23:59:59")
+        # kun aftaler der IKKE allerede er passeret
+        rows = db.appointments_between(u["telegram_id"],
+                                       nu.isoformat(timespec="seconds"), today + "T23:59:59")
         linjer = []
         for r in rows:
             tid = (r.get("start") or "")[11:16]
@@ -142,4 +146,12 @@ def start_scheduler():
     sch.add_job(status_vagt, "cron", minute="*/15")   # hvert 15. min: Åben -> Igangværende når planlagt tid er nået
     sch.start()
     log.info("scheduler kører")
+    try:
+        from datetime import datetime as _dt
+        print(f"[scheduler] TZ={TZ}, server-tid={_dt.now().isoformat(timespec='seconds')}, "
+              f"dansk tid={now_local().isoformat(timespec='seconds')}", flush=True)
+        for job in sch.get_jobs():
+            print(f"[scheduler] {job.func.__name__}: næste kørsel {job.next_run_time}", flush=True)
+    except Exception:
+        pass
     return sch
