@@ -1,6 +1,7 @@
 """FastAPI-indgang: modtager Telegram-webhooks, kører agenten, svarer."""
 import logging
 import re
+import threading
 import time as _time
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
@@ -324,12 +325,22 @@ async def telegram_webhook(secret: str, request: Request):
                 "flydende, korte sætninger, varmt og direkte. INGEN lister, bindestreger, "
                 "parenteser eller opremsninger - væv det ind i almindelige sætninger. "
                 "Max 2-3 sætninger medmindre der bedes om mere.) " + text)
+    # Hold "skriver…"/"optager…" kørende indtil svaret er klar (Telegram viser kun ~5 sek ad gangen)
+    _stop_typing = threading.Event()
+
+    def _puls():
+        while not _stop_typing.wait(4):
+            telegram.send_chat_action(chat["id"], "record_voice" if var_tale else "typing")
+
+    threading.Thread(target=_puls, daemon=True).start()
     try:
         svar = run_agent(ctx, text)
     except Exception as e:
         log.exception("agent-fejl")
         svar = "Der opstod en fejl. Prøv igen om lidt."
         _notify_leader(f"Agent-fejl for {user['navn']}: {e}")
+    finally:
+        _stop_typing.set()
 
     # Talte du til hende -> svar med tale; ellers tekst (sparer data ved skrift)
     if var_tale:
