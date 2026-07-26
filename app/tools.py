@@ -1096,7 +1096,10 @@ TOOLS = [
             "description": "Søg en kunde fleksibelt via navn ELLER adresse (delvis/upræcis er ok — den foreslår). "
                            "Send ét felt 'soegetekst' med ALT brugeren sagde, fx 'christian' eller 'christian ribevej 25'. "
                            "Returnerer 'kunder' (customer_number, navn, adresse, postnr, by), 'entydigt_match' (true "
-                           "hvis der klart kun er én rigtig) og 'bedste' (den kunde du så kan bruge direkte).",
+                           "hvis der klart kun er én rigtig) og 'bedste' (den kunde du så kan bruge direkte). "
+                           "KRITISK: er entydigt_match FALSE, må du ALDRIG selv vælge en kunde — vis mulighederne "
+                           "og spørg brugeren. Brug KUN dette værktøj når opgaven faktisk handler om en kunde i "
+                           "registret — aldrig for steder/firmaer i påmindelser (grossist, byggemarked osv.).",
             "parameters": {"type": "object", "properties": {
                 "soegetekst": {"type": "string"}}, "required": ["soegetekst"]},
         }},
@@ -1262,7 +1265,10 @@ TOOLS = [
                            "saa faar DE paamindelsen, ikke den der beder om det. Skal der planlaegges "
                            "ARBEJDE paa en sag, brug planlaeg_sag i stedet.",
             "parameters": {"type": "object", "properties": {
-                "kunde": {"type": "string"}, "opgave": {"type": "string"}, "start": {"type": "string"},
+                "kunde": {"type": "string",
+                          "description": "valgfri FRI TEKST (fx et navn brugeren naevner) - slaa den "
+                                         "ALDRIG op i kunderegistret"},
+                "opgave": {"type": "string"}, "start": {"type": "string"},
                 "medarbejder": {"type": "string"}},
                 "required": ["opgave", "start"]},
         }},
