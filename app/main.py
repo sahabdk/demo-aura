@@ -3,8 +3,10 @@ import logging
 import re
 import threading
 import time as _time
+import os
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import WEBHOOK_SECRET, LEADER_GROUP_CHAT_ID
 from . import db, telegram, menu, reference
@@ -15,6 +17,8 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("aura")
 
 app = FastAPI(title="Aura")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET") or WEBHOOK_SECRET
 
 
 @app.on_event("startup")
@@ -41,6 +45,30 @@ def ref_get(token: str):
 async def ref_post(token: str, request: Request):
     form = await request.form()
     return reference.submit_reference(token, form.get("reference", ""))
+
+
+# ---------- Pilly-overvaagning (dashboard-endpoint) ----------
+
+@app.get("/admin/{secret}/data")
+def admin_data(secret: str):
+    """Samlet overvaagningsdata til Pilly-dashboardet (samtaler, handlinger, fejl, status)."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    from .config import now_local
+    brugere = db.all_users()
+    navne = {str(u["telegram_id"]): {"navn": u["navn"], "rolle": u["rolle"]} for u in brugere}
+    handlinger = db.handlinger_seneste(antal=150)
+    fejl = [h for h in handlinger if "fejl" in (h.get("handling") or "").lower()][:40]
+    samtaler = db.samtaler_seneste(400)
+    for s in samtaler:
+        info = navne.get(str(s.get("telegram_id"))) or {}
+        s["navn"] = info.get("navn") or f"chat {s.get('telegram_id')}"
+        s["brugerrolle"] = info.get("rolle") or "?"
+    return {"firma": os.environ.get("FIRMA_NAVN", "Aura"),
+            "tid": now_local().isoformat(timespec="seconds"),
+            "pauseret": db.get_meta("aura_pauseret") == "1",
+            "brugere": [{"navn": u["navn"], "rolle": u["rolle"]} for u in brugere],
+            "handlinger": handlinger, "fejl": fejl, "samtaler": samtaler}
 
 
 # ---------- Retell-telefonagent + adresse-portal ----------
@@ -358,7 +386,11 @@ async def telegram_webhook(secret: str, request: Request):
 
 
 def _notify_leader(text: str):
-    """Safety net: send fejl til leder-gruppen."""
+    """Safety net: send fejl til leder-gruppen + gem i loggen (til Pilly-dashboardet)."""
+    try:
+        db.log_handling("", "system", "system", "⚠️ systemfejl", str(text)[:350])
+    except Exception:
+        pass
     if LEADER_GROUP_CHAT_ID:
         try:
             telegram.send_message(LEADER_GROUP_CHAT_ID, f"⚠️ Aura: {text}")

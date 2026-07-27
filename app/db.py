@@ -301,6 +301,15 @@ def handlinger_seneste(antal=30, dato=None):
         return [dict(r) for r in rows]
 
 
+def samtaler_seneste(antal=300):
+    """Seneste samtale-beskeder paa tvaers af brugere (til Pilly-overvaagning)."""
+    with conn() as c:
+        rows = c.execute(
+            "SELECT telegram_id, rolle, indhold, ts FROM samtaler ORDER BY ts DESC LIMIT ?",
+            (int(antal),)).fetchall()
+        return [dict(r) for r in rows]
+
+
 # ---- Meta (nøgle/værdi) + "sidst sete ordre" ----
 
 def get_meta(k, default=None):
