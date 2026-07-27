@@ -17,7 +17,8 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("aura")
 
 app = FastAPI(title="Aura")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET"], allow_headers=["*"])
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["GET", "POST"],
+                   allow_headers=["*"])
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET") or WEBHOOK_SECRET
 
 
@@ -67,8 +68,44 @@ def admin_data(secret: str):
     return {"firma": os.environ.get("FIRMA_NAVN", "Aura"),
             "tid": now_local().isoformat(timespec="seconds"),
             "pauseret": db.get_meta("aura_pauseret") == "1",
-            "brugere": [{"navn": u["navn"], "rolle": u["rolle"]} for u in brugere],
+            "brugere": [{"navn": u["navn"], "rolle": u["rolle"],
+                         "telegram_id": u["telegram_id"], "os_user_id": u.get("os_user_id"),
+                         "kilde": u.get("kilde") or "env"} for u in brugere],
             "handlinger": handlinger, "fejl": fejl, "samtaler": samtaler}
+
+
+@app.post("/admin/{secret}/brugere")
+async def admin_bruger_tilfoej(secret: str, request: Request):
+    """Tilfoej/opdater en bruger fra Pilly-dashboardet (kilde=admin: overlever genstart)."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    b = await request.json()
+    tid = str(b.get("telegram_id") or "").strip()
+    navn = str(b.get("navn") or "").strip()
+    rolle = b.get("rolle") if b.get("rolle") in ("pro", "jun") else "jun"
+    if not tid.isdigit() or not navn:
+        raise HTTPException(400, "telegram_id (tal) og navn er paakraevet")
+    db.upsert_user(tid, navn, rolle, b.get("os_user_id") or None, kilde="admin")
+    db.log_handling("", "Pilly-dashboard", "system", "bruger tilføjet/opdateret",
+                    f"{navn} ({rolle}), telegram {tid}")
+    return {"ok": True}
+
+
+@app.post("/admin/{secret}/brugere/fjern")
+async def admin_bruger_fjern(secret: str, request: Request):
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    b = await request.json()
+    tid = str(b.get("telegram_id") or "").strip()
+    bruger = db.get_user(tid) or {}
+    db.deactivate_user(tid)
+    db.log_handling("", "Pilly-dashboard", "system", "bruger fjernet",
+                    f"{bruger.get('navn') or tid} (telegram {tid})")
+    advarsel = None
+    if (bruger.get("kilde") or "env") == "env":
+        advarsel = ("Brugeren stammer fra SEED_USERS og kommer IGEN ved naeste genstart - "
+                    "fjern den ogsaa fra SEED_USERS i Railway for permanent fjernelse.")
+    return {"ok": True, "advarsel": advarsel}
 
 
 # ---------- Retell-telefonagent + adresse-portal ----------

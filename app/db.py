@@ -87,6 +87,11 @@ def init_db():
             c.execute("ALTER TABLE brugere ADD COLUMN os_user_id TEXT")
         except sqlite3.OperationalError:
             pass
+        # Migration: kilde-kolonne på brugere (env = SEED_USERS, admin = dashboard)
+        try:
+            c.execute("ALTER TABLE brugere ADD COLUMN kilde TEXT NOT NULL DEFAULT 'env'")
+        except sqlite3.OperationalError:
+            pass
         # Migration: fortryd-kolonner på handlinger
         for kol in ("ref_type TEXT", "ref_id TEXT", "fortrudt INTEGER NOT NULL DEFAULT 0"):
             try:
@@ -105,14 +110,19 @@ def get_user(telegram_id: str):
         return dict(row) if row else None
 
 
-def upsert_user(telegram_id, navn, rolle="jun", os_user_id=None):
+def upsert_user(telegram_id, navn, rolle="jun", os_user_id=None, kilde="env"):
     with conn() as c:
         c.execute(
-            "INSERT INTO brugere(telegram_id, navn, rolle, os_user_id, aktiv) VALUES(?,?,?,?,1) "
+            "INSERT INTO brugere(telegram_id, navn, rolle, os_user_id, aktiv, kilde) VALUES(?,?,?,?,1,?) "
             "ON CONFLICT(telegram_id) DO UPDATE SET navn=excluded.navn, rolle=excluded.rolle, "
-            "os_user_id=COALESCE(excluded.os_user_id, brugere.os_user_id), aktiv=1",
-            (str(telegram_id), navn, rolle, str(os_user_id) if os_user_id else None),
+            "os_user_id=COALESCE(excluded.os_user_id, brugere.os_user_id), aktiv=1, kilde=excluded.kilde",
+            (str(telegram_id), navn, rolle, str(os_user_id) if os_user_id else None, kilde),
         )
+
+
+def deactivate_user(telegram_id):
+    with conn() as c:
+        c.execute("UPDATE brugere SET aktiv=0 WHERE telegram_id=?", (str(telegram_id),))
 
 
 def deactivate_users_not_in(keep_ids):
@@ -123,7 +133,8 @@ def deactivate_users_not_in(keep_ids):
         return
     placeholders = ",".join("?" for _ in keep)
     with conn() as c:
-        c.execute(f"UPDATE brugere SET aktiv=0 WHERE telegram_id NOT IN ({placeholders})", keep)
+        c.execute(f"UPDATE brugere SET aktiv=0 WHERE kilde='env' AND telegram_id NOT IN ({placeholders})",
+                  keep)
 
 
 def all_users():
@@ -305,7 +316,7 @@ def samtaler_seneste(antal=300):
     """Seneste samtale-beskeder paa tvaers af brugere (til Pilly-overvaagning)."""
     with conn() as c:
         rows = c.execute(
-            "SELECT telegram_id, rolle, indhold, ts FROM samtaler ORDER BY ts DESC LIMIT ?",
+            "SELECT telegram_id, rolle, indhold, ts FROM samtaler ORDER BY rowid DESC LIMIT ?",
             (int(antal),)).fetchall()
         return [dict(r) for r in rows]
 
