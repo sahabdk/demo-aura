@@ -279,6 +279,8 @@ def afslut_sag(args, ctx):
 
 
 def send_paamindelse_email(args, ctx):
+    if not db.funktion_til("rykkere"):
+        return {"resultat": "Rykker-funktionen er slået FRA i kontrolpanelet - ingen mail sendt."}
     nr = str(args["kundenummer"])
     try:
         debtor = os_api.get_debtor(nr) or {}
@@ -1315,7 +1317,7 @@ def call_tool(name: str, args: dict, ctx: dict):
     # LØBSK-BREMSE: for mange ændringer fra én bruger på kort tid -> Aura pauser sig selv
     if name in MUTERENDE:
         try:
-            MAX_PR_TIME = 15
+            MAX_PR_TIME = db.graense("bremse", 15)
             n = db.antal_handlinger_seneste_time(ctx.get("telegram_id"))
             if n >= MAX_PR_TIME:
                 db.set_meta("aura_pauseret", "1")

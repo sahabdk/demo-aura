@@ -69,6 +69,10 @@ def admin_data(secret: str):
             "tid": now_local().isoformat(timespec="seconds"),
             "pauseret": db.get_meta("aura_pauseret") == "1",
             "testtilstand": db.get_meta("testtilstand") == "1",
+            "funktioner": {n: db.funktion_til(n)
+                           for n in ("rykkere", "sms", "statusvagt", "telefon", "referencescan")},
+            "graenser": {"bremse": db.graense("bremse", 15),
+                         "statusvagt": db.graense("statusvagt", 15)},
             "brugere": [{"navn": u["navn"], "rolle": u["rolle"],
                          "telegram_id": u["telegram_id"], "os_user_id": u.get("os_user_id"),
                          "kilde": u.get("kilde") or "env"} for u in brugere],
@@ -90,15 +94,24 @@ async def admin_indstilling(secret: str, request: Request):
     if not ADMIN_SECRET or secret != ADMIN_SECRET:
         raise HTTPException(403, "forkert admin-noegle")
     b = await request.json()
-    noegle = b.get("noegle")
-    if noegle not in ("testtilstand", "aura_pauseret"):
-        raise HTTPException(400, "ukendt indstilling")
-    vaerdi = "1" if b.get("vaerdi") else "0"
-    db.set_meta(noegle, vaerdi)
-    navnet = {"testtilstand": "testtilstand", "aura_pauseret": "pause"}[noegle]
-    db.log_handling("", "Pilly-dashboard", "system",
-                    f"{navnet} {'slået TIL' if vaerdi == '1' else 'slået FRA'}", "")
-    return {"ok": True, noegle: vaerdi == "1"}
+    noegle = str(b.get("noegle") or "")
+    FUNKTIONER = ("funk_rykkere", "funk_sms", "funk_statusvagt", "funk_telefon", "funk_referencescan")
+    GRAENSER = ("graense_bremse", "graense_statusvagt")
+    if noegle in ("testtilstand", "aura_pauseret") or noegle in FUNKTIONER:
+        vaerdi = "1" if b.get("vaerdi") else "0"
+        db.set_meta(noegle, vaerdi)
+        db.log_handling("", "Pilly-dashboard", "system",
+                        f"{noegle} {'slået TIL' if vaerdi == '1' else 'slået FRA'}", "")
+        return {"ok": True, noegle: vaerdi == "1"}
+    if noegle in GRAENSER:
+        try:
+            tal = max(1, min(200, int(b.get("vaerdi"))))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "vaerdi skal vaere et tal")
+        db.set_meta(noegle, str(tal))
+        db.log_handling("", "Pilly-dashboard", "system", f"{noegle} sat til {tal}", "")
+        return {"ok": True, noegle: tal}
+    raise HTTPException(400, "ukendt indstilling")
 
 
 @app.post("/admin/{secret}/brugere")
@@ -156,6 +169,9 @@ async def retell_webhook(secret: str, request: Request):
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
         raise HTTPException(403, "forkert token")
     data = await request.json()
+    if not db.funktion_til("telefon"):
+        print("[retell] webhook ignoreret - telefon-funktionen er slået fra", flush=True)
+        return {"ok": True}
     if data.get("event") == "call_analyzed":
         from . import retell as _retell
         try:

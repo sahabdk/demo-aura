@@ -335,6 +335,19 @@ def set_meta(k, v):
                   "ON CONFLICT(k) DO UPDATE SET v=excluded.v", (k, str(v)))
 
 
+def funktion_til(navn):
+    """Er en funktion taendt? (Pilly-kontakter; alt er TIL medmindre eksplicit slaaet fra)."""
+    return get_meta("funk_" + navn) != "0"
+
+
+def graense(navn, standard):
+    """Justerbar graense fra dashboardet (fx loebsk-bremse)."""
+    try:
+        return int(get_meta("graense_" + navn) or standard)
+    except (TypeError, ValueError):
+        return standard
+
+
 def get_last_seen_order(telegram_id):
     v = get_meta(f"sidst_ordre:{telegram_id}")
     return int(v) if v else 0

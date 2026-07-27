@@ -63,6 +63,9 @@ def inbound_vars(fra_nummer):
 
 def send_sms(til, tekst):
     """SMS via GatewayAPI (token som brugernavn i basic auth). Uden token: dry-run i loggen."""
+    if not db.funktion_til("sms"):
+        print(f"[sms/deaktiveret] -> {til}: {tekst}", flush=True)
+        return "deaktiveret"
     if db.get_meta("testtilstand") == "1":
         print(f"[sms/testtilstand] -> {til}: {tekst}", flush=True)
         return "dry-run"
@@ -114,10 +117,13 @@ def haandter_afsluttet_opkald(payload):
             token = _secrets.token_urlsafe(16)
             db.create_adr_request(token, fra, navn)
             link = f"{(APP_BASE_URL or '').rstrip('/')}/adr/{token}"
-            send_sms(fra, "Tak for dit opkald til Vandt & Vandt. Skriv venligst din adresse "
-                          f"her, så vi har den helt rigtigt: {link}")
-            sms_status = "sendt"
-            linjer.append("📱 Ukendt nummer → kunden har fået SMS-link til at skrive sin adresse.")
+            ret = send_sms(fra, "Tak for dit opkald til Vandt & Vandt. Skriv venligst din adresse "
+                                f"her, så vi har den helt rigtigt: {link}")
+            sms_status = ret
+            if ret == "sent":
+                linjer.append("📱 Ukendt nummer → kunden har fået SMS-link til at skrive sin adresse.")
+            else:
+                linjer.append(f"📱 Adresse-SMS blev IKKE sendt ({ret}) — link: {link}")
         except Exception as e:
             sms_status = f"fejlede: {str(e)[:120]}"
             linjer.append(f"⚠️ Adresse-SMS kunne ikke sendes ({sms_status}).")

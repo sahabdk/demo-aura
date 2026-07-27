@@ -73,6 +73,8 @@ def faktura_overview():
 
 def reference_scan():
     """Scan de store kunders sager for manglende referencenumre og mail dem."""
+    if not db.funktion_til("referencescan"):
+        return
     try:
         from . import reference
         reference.scan_and_notify()
@@ -84,6 +86,8 @@ def status_vagt():
     """Hver time: Åbne sager hvor den planlagte starttid er nået, skiftes automatisk
     til 'Igangværende'. Lukket/Aflyst/øvrige statusser røres aldrig."""
     import time as _t
+    if not db.funktion_til("statusvagt"):
+        return   # slaaet fra i kontrolpanelet
     if db.get_meta("aura_pauseret") == "1":
         print("[status_vagt] springes over — Aura er sat på pause", flush=True)
         return
@@ -98,7 +102,7 @@ def status_vagt():
             return
         from . import os_graphql as os_gql
         nu = int(_t.time())
-        MAX_SKIFT = 15   # sikkerhedsloft: vagten maa aldrig skifte flere sager i EN koersel
+        MAX_SKIFT = db.graense("statusvagt", 15)   # justerbart loft (Pilly-dashboardet)
         skiftet = []
         for c in os_api.cases_paged():
             if len(skiftet) >= MAX_SKIFT:
