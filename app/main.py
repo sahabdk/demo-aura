@@ -337,6 +337,8 @@ async def telegram_webhook(secret: str, request: Request):
     else:
         return {"ok": True}
 
+    raa_tekst = text   # det brugeren FAKTISK skrev/sagde (til log og dashboard)
+
     # Venter et foto på et sagsnummer? Så er "132" / "gem på sag 132" svaret på DET.
     afv_foto = _afventende_foto.get(str(chat["id"]))
     if afv_foto and _time.time() - afv_foto[1] < 600:
@@ -399,7 +401,7 @@ async def telegram_webhook(secret: str, request: Request):
 
     threading.Thread(target=_puls, daemon=True).start()
     try:
-        svar = run_agent(ctx, text)
+        svar = run_agent(ctx, text, raa_tekst)
     except Exception as e:
         log.exception("agent-fejl")
         svar = "Der opstod en fejl. Prøv igen om lidt."

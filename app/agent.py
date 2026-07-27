@@ -161,7 +161,7 @@ gamle sags-/kundenumre — slå op igen.
 """
 
 
-def run_agent(ctx: dict, user_message: str, max_steps: int = 6) -> str:
+def run_agent(ctx: dict, user_message: str, raw_text: str = None, max_steps: int = 6) -> str:
     """ctx: {telegram_id, navn, rolle}. Returnerer Auras tekstsvar."""
     today = now_local()
     header = (f"Lige nu (dansk tid): {today:%Y-%m-%d %H:%M} ({today:%A}). "
@@ -186,7 +186,7 @@ def run_agent(ctx: dict, user_message: str, max_steps: int = 6) -> str:
 
         if not msg.tool_calls:
             answer = msg.content or ""
-            db.save_message(ctx["telegram_id"], "user", user_message)
+            db.save_message(ctx["telegram_id"], "user", raw_text or user_message)
             db.save_message(ctx["telegram_id"], "assistant", answer)
             return answer
 
