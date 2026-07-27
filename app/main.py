@@ -337,7 +337,8 @@ async def telegram_webhook(secret: str, request: Request):
     else:
         return {"ok": True}
 
-    raa_tekst = text   # det brugeren FAKTISK skrev/sagde (til log og dashboard)
+    # det brugeren FAKTISK skrev/sagde (til log og dashboard); 🎤 = talebesked
+    raa_tekst = ("🎤 " + text) if var_tale else text
 
     # Venter et foto på et sagsnummer? Så er "132" / "gem på sag 132" svaret på DET.
     afv_foto = _afventende_foto.get(str(chat["id"]))
