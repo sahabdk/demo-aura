@@ -117,8 +117,10 @@ def haandter_afsluttet_opkald(payload):
             token = _secrets.token_urlsafe(16)
             db.create_adr_request(token, fra, navn)
             link = f"{(APP_BASE_URL or '').rstrip('/')}/adr/{token}"
-            ret = send_sms(fra, "Tak for dit opkald til Vandt & Vandt. Skriv venligst din adresse "
-                                f"her, så vi har den helt rigtigt: {link}")
+            sms_tekst = (db.get_meta("skabelon_sms_adresse")
+                         or "Tak for dit opkald til Vandt & Vandt. Skriv venligst din adresse "
+                            "her, så vi har den helt rigtigt: {link}")
+            ret = send_sms(fra, sms_tekst.replace("{link}", link))
             sms_status = ret
             if ret == "sent":
                 linjer.append("📱 Ukendt nummer → kunden har fået SMS-link til at skrive sin adresse.")

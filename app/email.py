@@ -28,10 +28,21 @@ TEMPLATES = {
 }
 
 
+def _skabelon(level):
+    """Rykker-skabelon: dashboard-overstyring foerst, ellers standard."""
+    std_emne, std_tekst = TEMPLATES.get(level, TEMPLATES[1])
+    try:
+        from . import db
+        return (db.get_meta(f"skabelon_rykker{level}_emne") or std_emne,
+                db.get_meta(f"skabelon_rykker{level}_tekst") or std_tekst)
+    except Exception:
+        return std_emne, std_tekst
+
+
 def send_payment_reminder(to_email: str, navn: str, level: int, beloeb: str = None,
                           forfald: str = None, dage_forsinket: int = None, fakturanr=None) -> str:
     """Sender en eskalerende rykker med fakturadetaljer + betalingsinfo. Returnerer 'sent'/'dry-run'."""
-    subject, body = TEMPLATES.get(level, TEMPLATES[1])
+    subject, body = _skabelon(level)
     linjer = [f"Kære {navn},", "", body]
 
     detaljer = []
@@ -47,8 +58,13 @@ def send_payment_reminder(to_email: str, navn: str, level: int, beloeb: str = No
     if detaljer:
         linjer += [""] + detaljer
 
-    if PAYMENT_INFO:
-        linjer += ["", PAYMENT_INFO]
+    try:
+        from . import db as _db
+        pinfo = _db.get_meta("betalingsinfo") or PAYMENT_INFO
+    except Exception:
+        pinfo = PAYMENT_INFO
+    if pinfo:
+        linjer += ["", pinfo]
     linjer += ["", "Venlig hilsen", FIRMA]
     return _send(to_email, subject, "\n".join(linjer))
 

@@ -114,6 +114,43 @@ async def admin_indstilling(secret: str, request: Request):
     raise HTTPException(400, "ukendt indstilling")
 
 
+_SKABELON_NOEGLER = ("skabelon_rykker1_emne", "skabelon_rykker1_tekst",
+                     "skabelon_rykker2_emne", "skabelon_rykker2_tekst",
+                     "skabelon_rykker3_emne", "skabelon_rykker3_tekst",
+                     "skabelon_sms_adresse", "betalingsinfo")
+
+
+@app.get("/admin/{secret}/skabeloner")
+def admin_skabeloner(secret: str):
+    """Aktuelle mail/sms-tekster (med standard som fallback) til redigering i dashboardet."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    from .email import TEMPLATES, PAYMENT_INFO
+    ud = {}
+    for lvl in (1, 2, 3):
+        std_emne, std_tekst = TEMPLATES[lvl]
+        ud[f"skabelon_rykker{lvl}_emne"] = db.get_meta(f"skabelon_rykker{lvl}_emne") or std_emne
+        ud[f"skabelon_rykker{lvl}_tekst"] = db.get_meta(f"skabelon_rykker{lvl}_tekst") or std_tekst
+    ud["skabelon_sms_adresse"] = (db.get_meta("skabelon_sms_adresse")
+                                  or "Tak for dit opkald til Vandt & Vandt. Skriv venligst din "
+                                     "adresse her, så vi har den helt rigtigt: {link}")
+    ud["betalingsinfo"] = db.get_meta("betalingsinfo") or PAYMENT_INFO or ""
+    return ud
+
+
+@app.post("/admin/{secret}/skabeloner")
+async def admin_skabelon_gem(secret: str, request: Request):
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    b = await request.json()
+    noegle = b.get("noegle")
+    if noegle not in _SKABELON_NOEGLER:
+        raise HTTPException(400, "ukendt skabelon")
+    db.set_meta(noegle, str(b.get("vaerdi") or "").strip())
+    db.log_handling("", "Pilly-dashboard", "system", "skabelon opdateret", noegle)
+    return {"ok": True}
+
+
 @app.post("/admin/{secret}/brugere")
 async def admin_bruger_tilfoej(secret: str, request: Request):
     """Tilfoej/opdater en bruger fra Pilly-dashboardet (kilde=admin: overlever genstart)."""
