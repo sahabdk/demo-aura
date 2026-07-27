@@ -348,7 +348,7 @@ def send_paamindelse_email(args, ctx):
         return {"fejl": f"rykker kunne ikke sendes: {e}"}
 
     if status != "sent":
-        return {"resultat": (f"TEST-TILSTAND: ingen rigtig mail sendt (SMTP er ikke sat op endnu). "
+        return {"resultat": (f"TEST-TILSTAND: ingen rigtig mail sendt. "
                              f"Det ville have været {level}. påmindelse til {navn}.")}
     db.set_reminder_count(nr, level)  # tæl først op ved bekræftet afsendelse
     return {"resultat": f"{level}. påmindelse sendt til {navn} ({email})"}

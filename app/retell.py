@@ -63,6 +63,9 @@ def inbound_vars(fra_nummer):
 
 def send_sms(til, tekst):
     """SMS via GatewayAPI (token som brugernavn i basic auth). Uden token: dry-run i loggen."""
+    if db.get_meta("testtilstand") == "1":
+        print(f"[sms/testtilstand] -> {til}: {tekst}", flush=True)
+        return "dry-run"
     if not GATEWAYAPI_TOKEN:
         print(f"[sms/dry-run] -> {til}: {tekst}", flush=True)
         return "dry-run"

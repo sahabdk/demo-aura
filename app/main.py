@@ -68,10 +68,37 @@ def admin_data(secret: str):
     return {"firma": os.environ.get("FIRMA_NAVN", "Aura"),
             "tid": now_local().isoformat(timespec="seconds"),
             "pauseret": db.get_meta("aura_pauseret") == "1",
+            "testtilstand": db.get_meta("testtilstand") == "1",
             "brugere": [{"navn": u["navn"], "rolle": u["rolle"],
                          "telegram_id": u["telegram_id"], "os_user_id": u.get("os_user_id"),
                          "kilde": u.get("kilde") or "env"} for u in brugere],
             "handlinger": handlinger, "fejl": fejl, "samtaler": samtaler}
+
+
+@app.get("/admin/{secret}/sundhed")
+def admin_sundhed(secret: str):
+    """Ping alle integrationer og rapporter groen/roed (Pilly-dashboardets 🩺-fane)."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    from . import sundhed
+    return {"tjek": sundhed.alle_tjek()}
+
+
+@app.post("/admin/{secret}/indstilling")
+async def admin_indstilling(secret: str, request: Request):
+    """Fjernbetjening fra dashboardet: testtilstand og pause taendes/slukkes."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    b = await request.json()
+    noegle = b.get("noegle")
+    if noegle not in ("testtilstand", "aura_pauseret"):
+        raise HTTPException(400, "ukendt indstilling")
+    vaerdi = "1" if b.get("vaerdi") else "0"
+    db.set_meta(noegle, vaerdi)
+    navnet = {"testtilstand": "testtilstand", "aura_pauseret": "pause"}[noegle]
+    db.log_handling("", "Pilly-dashboard", "system",
+                    f"{navnet} {'slået TIL' if vaerdi == '1' else 'slået FRA'}", "")
+    return {"ok": True, noegle: vaerdi == "1"}
 
 
 @app.post("/admin/{secret}/brugere")

@@ -55,6 +55,13 @@ def send_payment_reminder(to_email: str, navn: str, level: int, beloeb: str = No
 
 def _send(to_email: str, subject: str, text: str) -> str:
     """Sender en mail. Resend-API foretrækkes (virker fra Railway); ellers SMTP; ellers dry-run."""
+    try:   # TESTTILSTAND (Pilly-dashboardet): log i stedet for at sende
+        from . import db as _db
+        if _db.get_meta("testtilstand") == "1":
+            print(f"[EMAIL/testtilstand] -> {to_email} | {subject}\n{text[:300]}", flush=True)
+            return "dry-run"
+    except Exception:
+        pass
     if os.environ.get("RESEND_API_KEY"):
         return _send_resend(to_email, subject, text)
 
