@@ -893,6 +893,41 @@ def besked_til_leder(args, ctx):
     return {"resultat": "Beskeden er sendt til lederen"}
 
 
+def sags_statistik(args, ctx):
+    """Statistik over sager i en periode - taelles DIREKTE i ordrestyring (ikke handlingsloggen).
+    fra/til som YYYY-MM-DD (default: seneste 7 dage)."""
+    til_s = (args.get("til") or "").strip() or now_local().strftime("%Y-%m-%d")
+    fra_s = (args.get("fra") or "").strip()
+    try:
+        til_dt = datetime.strptime(til_s, "%Y-%m-%d") + timedelta(days=1)
+        fra_dt = (datetime.strptime(fra_s, "%Y-%m-%d") if fra_s else til_dt - timedelta(days=8))
+    except ValueError:
+        return {"fejl": "datoer skal vaere YYYY-MM-DD"}
+    fra_ts, til_ts = fra_dt.timestamp(), til_dt.timestamp()
+    oprettede, lukkede_af_dem, aabne_af_dem = [], [], []
+    lukkede_i_alt = 0
+    for c in os_api.cases_paged():
+        try:
+            oprettet = int(c.get("created_at") or 0)
+        except (ValueError, TypeError):
+            continue
+        lukket = os_api.is_closed(c)
+        if fra_ts <= oprettet < til_ts:
+            oprettede.append(c)
+            (lukkede_af_dem if lukket else aabne_af_dem).append(c)
+        if lukket:
+            lukkede_i_alt += 1
+    def _kort(c):
+        return {"sagsnummer": c.get("case_number"),
+                "beskrivelse": (c.get("description") or "")[:60]}
+    return {"periode": f"{fra_dt:%Y-%m-%d} til {til_s}",
+            "oprettet_i_perioden": len(oprettede),
+            "heraf_faerdigmeldt": len(lukkede_af_dem),
+            "heraf_stadig_aabne": len(aabne_af_dem),
+            "faerdigmeldte": [_kort(c) for c in lukkede_af_dem[:20]],
+            "stadig_aabne": [_kort(c) for c in aabne_af_dem[:20]]}
+
+
 def vis_handlinger(args, ctx):
     """Handlingsloggen (kun leder): hvad Aura har udfoert, af hvem og hvornaar."""
     dato = (args.get("dato") or "").strip() or None
@@ -1047,6 +1082,21 @@ TOOLS = [
                            "Medarbejdere kan kun fortryde egne handlinger.",
             "parameters": {"type": "object", "properties": {
                 "sagsnummer": {"type": "string"}, "type": {"type": "string"}},
+                "required": []},
+        }},
+    },
+    {
+        "func": sags_statistik, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "sags_statistik",
+            "description": "Statistik/optaelling af sager i en periode, talt DIREKTE i ordrestyring: "
+                           "hvor mange blev oprettet, hvor mange af dem er faerdigmeldt, hvilke er "
+                           "stadig aabne. Brug ved 'hvor mange sager/opgaver blev oprettet/fuldfoert "
+                           "i sidste uge/denne maaned'. Brug ALDRIG handlingsloggen til den slags - "
+                           "den daekker kun Auras egne handlinger. fra/til = YYYY-MM-DD (default "
+                           "seneste 7 dage).",
+            "parameters": {"type": "object", "properties": {
+                "fra": {"type": "string"}, "til": {"type": "string"}},
                 "required": []},
         }},
     },
