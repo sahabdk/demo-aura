@@ -254,9 +254,23 @@ def recent_cases(days=14, maks_sider=30):
     return rows
 
 
+_CASES_CACHE = {"rows": None, "sider": 0, "ts": 0.0}
+_HOURS_CACHE = {"rows": None, "ts": 0.0}
+
+
+def ryd_kortcache():
+    """Ryd korttids-cachen (kaldes efter enhver ændring, så svar aldrig er forældede)."""
+    _CASES_CACHE["rows"] = None
+    _HOURS_CACHE["rows"] = None
+
+
 def cases_paged(maks_sider=5):
-    """Seneste sager (pagineret, nyeste først) — bruges til at finde en kundes sager,
-    da /cases ikke kan filtreres på customer_number."""
+    """Seneste sager (pagineret, nyeste først). Korttids-cache (45 sek) — flere opslag i
+    samme svar rammer så kun ordrestyring én gang. Ryddes ved ændringer (ryd_kortcache)."""
+    now = time.time()
+    if (_CASES_CACHE["rows"] is not None and _CASES_CACHE["sider"] >= maks_sider
+            and now - _CASES_CACHE["ts"] < 45):
+        return _CASES_CACHE["rows"]
     rows, page = [], 1
     while page <= maks_sider:
         batch = _data(_req("GET", "/cases", params={
@@ -268,6 +282,7 @@ def cases_paged(maks_sider=5):
         if len(batch) < 100:
             break
         page += 1
+    _CASES_CACHE.update(rows=rows, sider=maks_sider, ts=time.time())
     return rows
 
 
@@ -515,9 +530,13 @@ def find_hour_type(navn=None):
 
 
 def hours_raw():
-    """DEBUG: hent raa timelinjer fra /hours, saa vi kan se hvilke hour_type-id'er
-    systemet selv bruger naar timer oprettes manuelt i web-UI'et."""
-    return _data(_req("GET", "/hours")) or []
+    """Raa timelinjer fra /hours (korttids-cache 30 sek; ryddes ved ændringer)."""
+    now = time.time()
+    if _HOURS_CACHE["rows"] is not None and now - _HOURS_CACHE["ts"] < 30:
+        return _HOURS_CACHE["rows"]
+    rows = _data(_req("GET", "/hours")) or []
+    _HOURS_CACHE.update(rows=rows, ts=now)
+    return rows
 
 
 def register_hours(*, case_id, emp_id, start_time, stop_time, hour_type, remark="", case_number=None):

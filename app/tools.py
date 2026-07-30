@@ -1396,6 +1396,10 @@ def call_tool(name: str, args: dict, ctx: dict):
     ref = res.pop("_ref", None) if isinstance(res, dict) else None
     if name in MUTERENDE and isinstance(res, dict) and not res.get("fejl"):
         try:
+            os_api.ryd_kortcache()   # naeste opslag skal se aendringen med det samme
+        except Exception:
+            pass
+        try:
             import json as _json
             db.log_handling(ctx.get("telegram_id"), ctx.get("navn"), ctx.get("rolle"),
                             MUTERENDE[name], _json.dumps(args, ensure_ascii=False)[:350],
