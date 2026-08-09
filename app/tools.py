@@ -184,6 +184,25 @@ def skriv_bemaerkning(args, ctx):
 
 
 def opret_kunde(args, ctx):
+    # HÅRDT VÆRN: findes der allerede en kunde med lignende navn, oprettes IKKE en ny
+    # medmindre brugeren udtrykkeligt har bekræftet det (bekraeft_ny=true).
+    if not args.get("bekraeft_ny"):
+        try:
+            lignende = fuzzy_find_customers(args["navn"], limit=3, with_scores=True)
+        except Exception:
+            lignende = []
+        staerke = [(s, d) for s, d in lignende if s >= 0.85]
+        if staerke:
+            return {"resultat": "STOP - der findes allerede kunde(r) med det navn. Vis brugeren "
+                                "listen og spørg om det er en af dem (så bruges deres kundenummer "
+                                "direkte). KUN hvis brugeren udtrykkeligt siger 'det skal være en "
+                                "HELT NY kunde', må du kalde opret_kunde igen med bekraeft_ny=true.",
+                    "eksisterende": [{"customer_number": d.get("customer_number"),
+                                      "navn": d.get("customer_name"),
+                                      "adresse": f"{d.get('customer_address') or ''}, "
+                                                 f"{d.get('customer_postalcode') or ''} "
+                                                 f"{d.get('customer_city') or ''}".strip(", ")}
+                                     for s, d in staerke]}
     res = os_api.create_debtor(
         navn=args["navn"], adresse=args["adresse"], postnr=args["postnr"], by=args["by"],
         telefon=args.get("telefon", ""), email=args.get("email", ""),
@@ -1218,6 +1237,10 @@ TOOLS = [
             "description": "Opret en NY kunde. Påkrævet: navn, adresse, postnr, by. Valgfrit (kun hvis "
                            "brugeren nævner dem): telefon, email, mobil, attention, cvr. Returnerer kundenummer.",
             "parameters": {"type": "object", "properties": {
+                "bekraeft_ny": {"type": "boolean",
+                                "description": "SKAL kun saettes true naar brugeren udtrykkeligt "
+                                               "har bekraeftet at det er en HELT NY kunde, selvom "
+                                               "en lignende findes"},
                 "navn": {"type": "string"}, "adresse": {"type": "string"},
                 "postnr": {"type": "string"}, "by": {"type": "string"},
                 "telefon": {"type": "string"}, "email": {"type": "string"},
