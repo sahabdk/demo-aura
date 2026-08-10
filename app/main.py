@@ -185,6 +185,34 @@ async def admin_bruger_fjern(secret: str, request: Request):
     return {"ok": True, "advarsel": advarsel}
 
 
+@app.post("/admin/{secret}/test-email")
+async def admin_test_email(secret: str, request: Request):
+    """Send en test-mail fra Pilly-dashboardet for at bekraefte mail-opsaetningen (Resend/EMAIL_FROM)."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    b = await request.json()
+    til = str(b.get("email") or "").strip()
+    if "@" not in til or "." not in til.split("@")[-1]:
+        raise HTTPException(400, "angiv en gyldig email-adresse")
+    from .email import _send, FIRMA
+    from .config import now_local
+    afsender = os.environ.get("EMAIL_FROM") or "onboarding@resend.dev (standard)"
+    try:
+        resultat = _send(til, f"Test-mail fra Aura ({FIRMA})",
+                         "Dette er en test-mail sendt fra Pilly-dashboardet.\n\n"
+                         f"Tidspunkt: {now_local().isoformat(timespec='seconds')}\n"
+                         f"Afsender (EMAIL_FROM): {afsender}\n\n"
+                         "Hvis du kan laese dette, virker mail-opsaetningen.")
+    except Exception as e:
+        db.log_handling("", "Pilly-dashboard", "system", "test-mail FEJL", f"{til}: {e}")
+        raise HTTPException(502, f"mail-fejl: {e}")
+    db.log_handling("", "Pilly-dashboard", "system", f"test-mail {resultat}", til)
+    return {"ok": True, "resultat": resultat, "afsender": afsender,
+            "note": ("dry-run = ingen rigtig mail sendt (testtilstand er taendt, "
+                     "eller RESEND_API_KEY/SMTP mangler)") if resultat == "dry-run" else
+                    "Mail afsendt - tjek indbakken (og spam-mappen)."}
+
+
 # ---------- Retell-telefonagent + adresse-portal ----------
 
 @app.post("/retell/{secret}/inbound")
