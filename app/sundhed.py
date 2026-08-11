@@ -43,9 +43,18 @@ def alle_tjek():
         if not r.ok:
             raise RuntimeError(f"HTTP {r.status_code}")
         doms = (r.json() or {}).get("data") or []
-        verificerede = sum(1 for d in doms if d.get("status") == "verified")
-        return f"{len(doms)} domæne(r), {verificerede} verificeret"
-    ud.append(_tjek("Resend (rykker-mails)", _resend))
+        verificerede = [d.get("name") for d in doms if d.get("status") == "verified"]
+        afsender = os.environ.get("EMAIL_FROM", "onboarding@resend.dev")
+        domaene = afsender.split("@")[-1].lower()
+        if domaene == "resend.dev":
+            raise RuntimeError("EMAIL_FROM er ikke sat - mails kommer fra onboarding@resend.dev "
+                               "(kun test, ryger ofte i spam)")
+        if domaene not in [v.lower() for v in verificerede]:
+            raise RuntimeError(f"afsender {afsender}, men domænet {domaene} er IKKE verificeret "
+                               f"i Resend - mails afvises! ({len(doms)} domæne(r), "
+                               f"{len(verificerede)} verificeret)")
+        return f"afsender {afsender} - domæne verificeret ✓"
+    ud.append(_tjek("Mail-afsender (Resend)", _resend))
 
     def _gw():
         if not retell.GATEWAYAPI_TOKEN:
@@ -58,12 +67,42 @@ def alle_tjek():
         return f"kredit: {d.get('credit', '?')} {d.get('currency', '')}"
     ud.append(_tjek("GatewayAPI (sms)", _gw))
 
+    def _openai():
+        from .config import OPENAI_API_KEY, OPENAI_MODEL
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY mangler - Aura kan IKKE svare!")
+        r = requests.get(f"https://api.openai.com/v1/models/{OPENAI_MODEL}",
+                         headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}, timeout=10)
+        if r.status_code == 401:
+            raise RuntimeError("nøglen er UGYLDIG - Aura kan IKKE svare!")
+        if r.status_code == 404:
+            raise RuntimeError(f"modellen '{OPENAI_MODEL}' findes ikke - tjek OPENAI_MODEL")
+        if not r.ok:
+            raise RuntimeError(f"HTTP {r.status_code}")
+        return f"nøgle gyldig, model {OPENAI_MODEL}"
+    ud.append(_tjek("OpenAI (AI-hjernen)", _openai))
+
     def _tg():
         r = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getMe", timeout=10)
         if not r.ok:
             raise RuntimeError(f"HTTP {r.status_code}")
         return "@" + (((r.json() or {}).get("result") or {}).get("username") or "?")
     ud.append(_tjek("Telegram-bot", _tg))
+
+    def _tg_webhook():
+        r = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getWebhookInfo", timeout=10)
+        if not r.ok:
+            raise RuntimeError(f"HTTP {r.status_code}")
+        info = (r.json() or {}).get("result") or {}
+        url = info.get("url") or ""
+        if not url:
+            raise RuntimeError("INGEN webhook sat - botten modtager intet! Kør setWebhook-adressen (A8)")
+        fejl = info.get("last_error_message")
+        ventende = info.get("pending_update_count", 0)
+        if fejl:
+            raise RuntimeError(f"seneste webhook-fejl: {fejl} ({ventende} beskeder i kø)")
+        return f"aktiv ({ventende} i kø)"
+    ud.append(_tjek("Telegram-webhook", _tg_webhook))
 
     def _retell_seneste():
         for h in db.handlinger_seneste(antal=300):
