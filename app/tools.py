@@ -315,8 +315,28 @@ def _set_kontakt_levering(sagsnummer, customer_number, args):
 
 
 def opret_sag(args, ctx):
+    kn = str(args.get("customer_number") or "").strip()
+    if not kn and args.get("kunde"):
+        # Slaa kunden op ud fra navnet - saa AI'en ikke selv skal jonglere soeg->vaelg->opret.
+        hits = fuzzy_find_customers(str(args["kunde"]), limit=3, with_scores=True)
+        staerke = [(s, d) for s, d in hits if s >= 0.85]
+        if not staerke:
+            return {"resultat": f"Ingen eksisterende kunde matcher '{args['kunde']}'. "
+                                "Er det en helt ny kunde, saa brug opret_kunde foerst."}
+        if len(staerke) == 1 or staerke[0][0] >= staerke[1][0] + 0.08:
+            kn = str(staerke[0][1].get("customer_number"))
+        else:
+            return {"resultat": "Flere kunder matcher navnet. Spoerg brugeren HVILKEN (kun én gang) "
+                                "og kald derefter opret_sag igen med customer_number sat direkte.",
+                    "kandidater": [{"customer_number": d.get("customer_number"),
+                                    "navn": d.get("customer_name"),
+                                    "adresse": f"{d.get('customer_address') or ''}, "
+                                               f"{d.get('customer_city') or ''}".strip(", ")}
+                                   for s, d in staerke]}
+    if not kn:
+        return {"fejl": "angiv customer_number eller kunde (kundens navn)"}
     res = os_api.create_case(
-        customer_number=args["customer_number"],
+        customer_number=kn,
         beskrivelse=args.get("beskrivelse", ""),
         reference=args.get("reference", ""),
         projektnavn=args.get("projektnavn", ""),
@@ -331,8 +351,9 @@ def opret_sag(args, ctx):
             ekstra["ansvarlig"] = ctx.get("navn")
         except Exception:
             pass
-    ekstra.update(_set_kontakt_levering(sag, args.get("customer_number"), args))
-    return {"resultat": "sag oprettet", "sagsnummer": sag, **ekstra}
+    ekstra.update(_set_kontakt_levering(sag, kn, args))
+    return {"resultat": "sag oprettet", "sagsnummer": sag,
+            "kundenummer": kn, **ekstra}
 
 
 def opdater_sag(args, ctx):
@@ -1359,15 +1380,19 @@ TOOLS = [
         "func": opret_sag, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "opret_sag",
-            "description": "Opret en NY sag på en eksisterende kunde. Brug KUN når brugeren tydeligt vil have en ny sag. "
-                           "Valgfrit: projektnavn, reference, kontaktperson (KUNDENS kontaktperson - ALDRIG en "
-                           "medarbejder; skal en medarbejder have opgaven, brug tildel_sag bagefter), "
-                           "leveringsadresse. Returnerer sagsnummer.",
+            "description": "Opret en NY sag/ordre på en eksisterende kunde. Ved 'opret ordre for "
+                           "kunden X': kald DIREKTE med kunde=X (navnet) - værktøjet finder selv "
+                           "kunden, søg IKKE først og spørg IKKE om bekræftelse mere end én gang. "
+                           "Valgfrit: projektnavn, reference, kontaktperson (KUNDENS kontaktperson - "
+                           "ALDRIG en medarbejder; brug tildel_sag til det), leveringsadresse "
+                           "(stedet arbejdet udføres - hører til SAGEN, ikke kunden). Returnerer sagsnummer.",
             "parameters": {"type": "object", "properties": {
-                "customer_number": {"type": "string"}, "beskrivelse": {"type": "string"},
+                "kunde": {"type": "string", "description": "kundens navn - værktøjet slår selv nummeret op"},
+                "customer_number": {"type": "string", "description": "brug denne hvis nummeret allerede kendes"},
+                "beskrivelse": {"type": "string"},
                 "projektnavn": {"type": "string"}, "reference": {"type": "string"},
                 "kontaktperson": {"type": "string"}, "leveringsadresse": {"type": "string"}},
-                "required": ["customer_number"]},
+                "required": []},
         }},
     },
     {
