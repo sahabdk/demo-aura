@@ -265,6 +265,12 @@ def opret_kunde(args, ctx):
                                                  f"{d.get('customer_postalcode') or ''} "
                                                  f"{d.get('customer_city') or ''}".strip(", ")}
                                      for s, d in staerke]}
+    mangler = [f for f in ("adresse", "postnr", "by") if not str(args.get(f) or "").strip()]
+    if mangler:
+        return {"resultat": "Kunden findes IKKE i forvejen - det er en helt ny kunde. "
+                            "Før jeg kan oprette den mangler jeg: " + ", ".join(mangler)
+                            + ". Spørg brugeren (ét samlet spørgsmål) og kald værktøjet igen. "
+                            "OBS: en leveringsadresse på SAGEN er ikke kundens egen adresse."}
     res = os_api.create_debtor(
         navn=args["navn"], adresse=args["adresse"], postnr=args["postnr"], by=args["by"],
         telefon=args.get("telefon", ""), email=args.get("email", ""),
@@ -1323,14 +1329,18 @@ TOOLS = [
         "func": opret_kunde, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "opret_kunde",
-            "description": "Opret en NY kunde. Vaerktoejet tjekker SELV om navnet findes og naegter dubletter - faar du 'eksisterende' tilbage, SKAL du bruge den eksisterende kundes nummer og sige det til brugeren. Kraever navn, adresse, postnr, by."
-                           "brugeren nævner dem): telefon, email, mobil, attention, cvr. Returnerer kundenummer.",
+            "description": "Opret en NY kunde. Kald STRAKS med det du har (kun navn er påkrævet) - "
+                           "værktøjet tjekker FØRST selv om kunden findes og nægter dubletter. "
+                           "Får du 'eksisterende' tilbage, SKAL du bruge den eksisterende kundes "
+                           "nummer og sige det til brugeren. Spørg ALDRIG om postnr/adresse FØR du "
+                           "har kaldt - kun hvis værktøjet melder at der mangler noget. "
+                           "Valgfrit: telefon, email, mobil, attention, cvr. Returnerer kundenummer.",
             "parameters": {"type": "object", "properties": {
                 "navn": {"type": "string"}, "adresse": {"type": "string"},
                 "postnr": {"type": "string"}, "by": {"type": "string"},
                 "telefon": {"type": "string"}, "email": {"type": "string"},
                 "mobil": {"type": "string"}, "attention": {"type": "string"}, "cvr": {"type": "string"}},
-                "required": ["navn", "adresse", "postnr", "by"]},
+                "required": ["navn"]},
         }},
     },
     {
