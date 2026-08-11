@@ -156,6 +156,31 @@ def sagsliste(args, ctx):
             "bemaerkning": "kun de nyeste 60 vist" if len(sager) > 60 else ""}
 
 
+def tjek_planlaegning(args, ctx):
+    """Har sagerne planlagt tid i kalenderen? Rent laese-opslag pr. sagsnummer."""
+    numre = args.get("sagsnumre") or []
+    if isinstance(numre, (str, int)):
+        numre = [numre]
+    numre = [str(n).strip() for n in numre if str(n).strip()][:15]
+    if not numre:
+        return {"fejl": "angiv mindst ét sagsnummer"}
+    ud = []
+    for nr in numre:
+        try:
+            evts = os_gql.planned_events(nr)
+        except Exception as e:
+            ud.append({"sagsnummer": nr, "fejl": str(e)[:80]})
+            continue
+        if evts:
+            tider = sorted((e.get("startTime") or "") for e in evts)
+            ud.append({"sagsnummer": nr, "planlagt": True, "antal_tider": len(evts),
+                       "seneste_tid": tider[-1][:16].replace("T", " kl. ")})
+        else:
+            ud.append({"sagsnummer": nr, "planlagt": False})
+    return {"resultat": ud,
+            "bemaerkning": "maks 15 sager pr. opslag" if len(args.get("sagsnumre") or []) > 15 else ""}
+
+
 _FOTO_STOPORD = {"tilføj", "tilfoej", "gem", "gemme", "billede", "billedet", "billed", "foto",
                  "til", "på", "paa", "ordren", "ordre", "ordrer", "sagen", "sag", "sager",
                  "dokumentation", "dok", "det", "dette", "her", "hos", "ved", "denne", "den",
@@ -1252,10 +1277,24 @@ TOOLS = [
             "description": "Liste over ALLE firmaets sager med sagsnumre - som standard kun åbne. "
                            "Kan filtreres på en medarbejder ved navn. Brug ved: 'giv mig alle åbne "
                            "sager', 'alle sagsnumre', 'hvilke sager er tildelt Dan Hansen'. "
-                           "Spørg IKKE om detaljer først - åbne sager for hele firmaet er standard.",
+                           "Spørg IKKE om detaljer først - åbne sager for hele firmaet er standard. "
+                           "VIGTIGT: brug KUN medarbejder-filteret hvis den AKTUELLE besked nævner "
+                           "en medarbejder - arv ALDRIG et filter fra tidligere i samtalen.",
             "parameters": {"type": "object", "properties": {
-                "medarbejder": {"type": "string", "description": "valgfrit: filtrér på medarbejderens navn"},
+                "medarbejder": {"type": "string", "description": "KUN hvis den aktuelle besked nævner et navn"},
                 "inkluder_lukkede": {"type": "boolean"}}},
+        }},
+    },
+    {
+        "func": tjek_planlaegning, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "tjek_planlaegning",
+            "description": "Tjek om sager har PLANLAGT TID i kalenderen (fx 'er de planlagt?', "
+                           "'er sag 28679 planlagt?'). Tag sagsnumrene fra samtalen og slå op "
+                           "med det samme - spørg ALDRIG om lov først. Maks 15 numre pr. kald.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnumre": {"type": "array", "items": {"type": "string"}}},
+                "required": ["sagsnumre"]},
         }},
     },
     {
