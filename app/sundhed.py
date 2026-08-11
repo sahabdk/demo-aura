@@ -112,4 +112,57 @@ def alle_tjek():
     ud.append(_tjek("Telefon (Retell-webhook)", _retell_seneste))
 
     ud.append(_tjek("Database", lambda: f"{len(db.all_users())} aktive brugere"))
+
+    # ---- 💰 Penge: saldo og forbrug ----
+    def _twilio():
+        sid = os.environ.get("TWILIO_SID")
+        tok = os.environ.get("TWILIO_TOKEN")
+        if not sid or not tok:
+            raise RuntimeError("ikke sat op - tilføj TWILIO_SID + TWILIO_TOKEN i Railway "
+                               "(forsiden af Twilio Console), så overvåges nummerets saldo")
+        r = requests.get(f"https://api.twilio.com/2010-04-01/Accounts/{sid}/Balance.json",
+                         auth=(sid, tok), timeout=10)
+        if not r.ok:
+            raise RuntimeError(f"HTTP {r.status_code} - forkert SID/token?")
+        d = r.json() or {}
+        saldo = float(d.get("balance") or 0)
+        valuta = d.get("currency") or ""
+        brugt = ""
+        try:
+            r2 = requests.get(f"https://api.twilio.com/2010-04-01/Accounts/{sid}"
+                              "/Usage/Records/ThisMonth.json?Category=totalprice",
+                              auth=(sid, tok), timeout=10)
+            rec = ((r2.json() or {}).get("usage_records") or [{}])[0]
+            brugt = f" - brugt denne md: {float(rec.get('price') or 0):.2f} {rec.get('price_unit', '')}"
+        except Exception:
+            pass
+        if saldo < 50:
+            raise RuntimeError(f"LAV saldo: {saldo:.2f} {valuta} - tank op, ellers dør "
+                               f"telefonnummeret!{brugt}")
+        return f"saldo {saldo:.2f} {valuta}{brugt}"
+    ud.append(_tjek("💰 Twilio (telefonnummer)", _twilio))
+
+    def _openai_forbrug():
+        import datetime
+        key = os.environ.get("OPENAI_ADMIN_KEY")
+        if not key:
+            raise RuntimeError("ikke sat op - lav en Admin key: platform.openai.com -> "
+                               "indstillinger -> Organization -> Admin keys -> tilføj som "
+                               "OPENAI_ADMIN_KEY i Railway, så vises månedens AI-forbrug")
+        start = int(datetime.datetime.now(datetime.timezone.utc)
+                    .replace(day=1, hour=0, minute=0, second=0, microsecond=0).timestamp())
+        r = requests.get("https://api.openai.com/v1/organization/costs",
+                         params={"start_time": start, "limit": 31},
+                         headers={"Authorization": f"Bearer {key}"}, timeout=15)
+        if r.status_code == 401:
+            raise RuntimeError("nøglen er ikke en ADMIN-key (alm. API-nøgler kan ikke se forbrug)")
+        if not r.ok:
+            raise RuntimeError(f"HTTP {r.status_code}")
+        total = 0.0
+        for bucket in (r.json() or {}).get("data") or []:
+            for res in bucket.get("results") or []:
+                total += float(((res.get("amount") or {}).get("value")) or 0)
+        return f"AI-forbrug denne måned: ${total:.2f}"
+    ud.append(_tjek("💰 OpenAI-forbrug", _openai_forbrug))
+
     return ud
