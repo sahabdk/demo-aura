@@ -120,6 +120,42 @@ def mine_sager(args, ctx):
     ]}
 
 
+def sagsliste(args, ctx):
+    """Alle firmaets sager (som standard kun aabne) - evt. filtreret paa en medarbejder."""
+    sager = list(os_api.cases_paged())
+    filter_navn = ""
+    if args.get("medarbejder"):
+        mids, ukendte = _find_medarbejdere({"medarbejder": args["medarbejder"]}, ctx, kraev=True)
+        if not mids:
+            return {"resultat": f"Jeg kunne ikke finde medarbejderen '{args['medarbejder']}' "
+                                "i ordrestyring. Sig 'vis medarbejdere' for listen."}
+        mid = mids[0]
+
+        def _paa_sagen(c):
+            if str(c.get("main_technician") or "") == str(mid):
+                return True
+            for k in ("users", "workers", "employees"):
+                v = c.get(k)
+                if isinstance(v, list):
+                    for u in v:
+                        uid = u.get("id") if isinstance(u, dict) else u
+                        if str(uid) == str(mid):
+                            return True
+            return False
+        sager = [c for c in sager if _paa_sagen(c)]
+        filter_navn = os_api.user_name(mid) or str(args["medarbejder"])
+    if not args.get("inkluder_lukkede"):
+        sager = [c for c in sager if not os_api.is_closed(c)]
+    sager.sort(key=lambda c: int(c.get("created_at") or 0), reverse=True)
+    return {"antal": len(sager),
+            "filter": filter_navn or "alle medarbejdere",
+            "sager": [{"sagsnummer": c.get("case_number"),
+                       "kunde": c.get("customer_name"),
+                       "beskrivelse": (c.get("description") or "")[:100] or "(ingen beskrivelse)"}
+                      for c in sager[:60]],
+            "bemaerkning": "kun de nyeste 60 vist" if len(sager) > 60 else ""}
+
+
 _FOTO_STOPORD = {"tilføj", "tilfoej", "gem", "gemme", "billede", "billedet", "billed", "foto",
                  "til", "på", "paa", "ordren", "ordre", "ordrer", "sagen", "sag", "sager",
                  "dokumentation", "dok", "det", "dette", "her", "hos", "ved", "denne", "den",
@@ -1207,6 +1243,19 @@ TOOLS = [
                 "antal": {"type": "number"}, "varenummer": {"type": "string"},
                 "beskrivelse": {"type": "string"}},
                 "required": ["sagsnummer", "vare_id"]},
+        }},
+    },
+    {
+        "func": sagsliste, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "sagsliste",
+            "description": "Liste over ALLE firmaets sager med sagsnumre - som standard kun åbne. "
+                           "Kan filtreres på en medarbejder ved navn. Brug ved: 'giv mig alle åbne "
+                           "sager', 'alle sagsnumre', 'hvilke sager er tildelt Dan Hansen'. "
+                           "Spørg IKKE om detaljer først - åbne sager for hele firmaet er standard.",
+            "parameters": {"type": "object", "properties": {
+                "medarbejder": {"type": "string", "description": "valgfrit: filtrér på medarbejderens navn"},
+                "inkluder_lukkede": {"type": "boolean"}}},
         }},
     },
     {
