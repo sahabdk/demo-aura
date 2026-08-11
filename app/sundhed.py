@@ -24,6 +24,8 @@ def alle_tjek():
     ud = []
     ud.append(_tjek("ordrestyring (v2 REST)",
                     lambda: f"{len(os_api.case_statuses(force=True))} statusser hentet"))
+    ud.append(_tjek("ordrestyring (kunder)",
+                    lambda: f"{len(os_api.all_debtors(force=True))} kunder hentet"))
     ud.append(_tjek("ordrestyring (GraphQL)",
                     lambda: (os_gql._gql("{ __typename }"), "svarer")[1]))
 
