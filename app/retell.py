@@ -100,6 +100,23 @@ def haandter_afsluttet_opkald(payload):
         navn = dyn.get("navn") or ""
     adresse = " ".join(x for x in (dyn.get("adresse"), dyn.get("postnummer"), dyn.get("by")) if x)
 
+    # TOMT OPKALD-FILTER: lagde kunden paa uden reelt at sige noget, og er der hverken
+    # navn, aerinde eller noget akut - saa forstyr IKKE lederen og send INGEN sms.
+    transcript = call.get("transcript") or ""
+    kunde_ord = " ".join(l.split(":", 1)[1] for l in transcript.splitlines()
+                         if l.strip().lower().startswith("user:"))
+    tomt = (not akut and not navn.strip()
+            and len(kunde_ord.strip()) < 15
+            and not (custom.get("aerinde") or "").strip())
+    if tomt:
+        try:
+            db.log_handling("", "AI-Aura (telefon)", "system", "tomt opkald ignoreret",
+                            f"{fra or 'skjult nummer'}: lagde paa uden besked")
+        except Exception:
+            pass
+        print(f"[retell] tomt opkald fra {fra} ignoreret (ingen besked/aerinde)", flush=True)
+        return
+
     linjer = ["🚨 AKUT — telefonbesked fra AI-Aura:" if akut else "📞 Telefonbesked fra AI-Aura:",
               f"Kunde: {navn or 'ukendt navn'}",
               f"Telefon: {fra or 'skjult nummer'}"]
@@ -111,8 +128,15 @@ def haandter_afsluttet_opkald(payload):
         linjer.append("Adresse: (kendt kunde, se ordrestyring)")
     linjer.append(f"Besked: {resume}")
 
+    if not adresse:
+        adresse_fra_samtalen = (custom.get("adresse") or "").strip()
+        if adresse_fra_samtalen:
+            adresse = adresse_fra_samtalen
+            linjer.insert(3, f"Adresse (oplyst i samtalen): {adresse}")
+
     sms_status = None
-    if not kendt and fra:
+    # Adresse-SMS kun naar den giver mening: ukendt nummer OG adressen mangler stadig
+    if not kendt and fra and not adresse:
         try:
             token = _secrets.token_urlsafe(16)
             db.create_adr_request(token, fra, navn)
