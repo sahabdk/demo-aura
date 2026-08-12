@@ -58,15 +58,25 @@ def all_debtors(force=False):
     now = time.time()
     if not force and _CACHE["rows"] and (now - _CACHE["ts"]) < _CACHE_TTL:
         return _CACHE["rows"]
-    rows, page = [], 1
-    while page <= 60:  # sikkerhedsgrænse (60*100 = 6000 kunder)
-        batch = _data(_req("GET", "/debtors", params={"page": page, "pagesize": 100})) or []
-        if not batch:
-            break
-        rows.extend(batch)
-        if len(batch) < 100:
-            break
-        page += 1
+    def _side(p):
+        return _data(_req("GET", "/debtors", params={"page": p, "pagesize": 100})) or []
+
+    rows = _side(1)
+    if len(rows) == 100:
+        # hent resten i boelger a 8 sider parallelt (2400+ kunder: ~4 sek i stedet for ~30)
+        from concurrent.futures import ThreadPoolExecutor
+        naeste = 2
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            while naeste <= 60:  # sikkerhedsgraense (60*100 = 6000 kunder)
+                boelge = list(range(naeste, min(naeste + 8, 61)))
+                faerdig = False
+                for batch in ex.map(_side, boelge):
+                    rows.extend(batch)
+                    if len(batch) < 100:
+                        faerdig = True
+                if faerdig:
+                    break
+                naeste += 8
     _CACHE["rows"], _CACHE["ts"] = rows, now
     return rows
 

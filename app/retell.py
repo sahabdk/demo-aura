@@ -31,17 +31,33 @@ def _norm_tlf(nr):
 
 
 def find_kunde_ved_telefon(fra_nummer):
-    """Find kunden i ordrestyring ud fra telefonnummer (tolerant for +45/mellemrum)."""
+    """Find kunden i ordrestyring ud fra telefonnummer (tolerant for +45/mellemrum).
+    Tjekker ALLE telefon-agtige felter paa kunden (telefon, mobil, faktura-mobil osv.),
+    og proever igen med FRISK kundeliste hvis nummeret ikke findes i den cachede."""
     n = _norm_tlf(fra_nummer)
     if len(n) < 8:
         return None
     n8 = n[-8:]
-    for d in os_api.all_debtors():
-        for felt in ("customer_telephone", "customer_mobile"):
-            k = _norm_tlf(d.get(felt))
-            if k and k[-8:] == n8:
-                return d
-    return None
+
+    def _match(rows):
+        for d in rows:
+            for noegle, vaerdi in d.items():
+                if not any(t in str(noegle).lower() for t in ("telephone", "phone", "mobile", "telefon", "mobil")):
+                    continue
+                k = _norm_tlf(vaerdi)
+                if k and k[-8:] == n8:
+                    return d
+        return None
+
+    hit = _match(os_api.all_debtors())
+    if hit:
+        return hit
+    # ikke fundet i cachen: kunden kan vaere oprettet/rettet for nylig -> hent frisk liste
+    try:
+        return _match(os_api.all_debtors(force=True))
+    except Exception as e:
+        print(f"[retell] frisk kundeliste fejlede: {str(e)[:120]}", flush=True)
+        return None
 
 
 def inbound_vars(fra_nummer):
