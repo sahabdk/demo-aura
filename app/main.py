@@ -30,6 +30,33 @@ def _startup():
     log.info("Aura startet")
 
 
+@app.get("/", response_class=HTMLResponse)
+def forside():
+    """Offentlig forside, saa besoegende (og fx GatewayAPI's godkendere) ser en rigtig side."""
+    firma = os.environ.get("FIRMA_NAVN", "Vandt & Vandt ApS")
+    return f"""<!doctype html><html lang="da"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aura — digital assistent for {firma}</title>
+<style>
+  body{{font-family:'Segoe UI',system-ui,sans-serif;background:#f5f6fa;color:#222;
+       display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}}
+  .kort{{background:#fff;border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.08);
+        padding:40px 44px;max-width:520px;text-align:center}}
+  h1{{font-size:26px;margin-bottom:6px}} h1 span{{color:#5b6cff}}
+  p{{line-height:1.6;color:#555;margin:10px 0}}
+  .lille{{font-size:13px;color:#999;margin-top:22px}}
+</style></head><body>
+<div class="kort">
+  <h1>🤖 <span>Aura</span></h1>
+  <p><b>Digital assistent for {firma}</b></p>
+  <p>Aura hjælper med sagsstyring, kundebeskeder og påmindelser.
+     SMS'er og mails fra dette system indeholder personlige links,
+     hvor kunder fx kan bekræfte deres adresse eller angive et referencenummer.</p>
+  <p>Har du modtaget et link fra os, er det sikkert at åbne — der kræves intet login.</p>
+  <div class="lille">Drives af {firma} · Kontakt: se vandt-vandt.dk</div>
+</div></body></html>"""
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
