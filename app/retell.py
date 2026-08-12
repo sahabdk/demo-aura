@@ -108,10 +108,31 @@ def haandter_afsluttet_opkald(payload):
     tomt = (not akut and not navn.strip()
             and len(kunde_ord.strip()) < 15
             and not (custom.get("aerinde") or "").strip())
+    # RELEVANS-VAGT: sagde kunden noget, men uden reelt aerinde ("det var ikke noget
+    # alligevel", forkert nummer, fortrudt) - saa vurderer AI'en indholdet. Fejler
+    # vurderingen, sendes beskeden hellere en gang for meget (fail-open).
+    if not tomt and not akut:
+        try:
+            from .agent import client
+            from .config import OPENAI_MODEL
+            svar = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[{"role": "user", "content":
+                    "Et telefonopkald til et el/vvs-firma er slut.\n"
+                    f"Resumé: {resume}\nKundens egne ord: {kunde_ord[:500]}\n\n"
+                    "Skal firmaet foretage sig NOGET (ringe tilbage, oprette sag, "
+                    "notere en besked, sende en tekniker)? Svar KUN 'ja' eller 'nej'. "
+                    "Svar 'nej' hvis kunden fortrød, tog fejl af nummeret, ikke havde "
+                    "noget ærinde alligevel, eller opkaldet ellers er uden indhold."}],
+            )
+            if "nej" in (svar.choices[0].message.content or "").strip().lower()[:6]:
+                tomt = True
+        except Exception as e:
+            print(f"[retell] relevans-vagt fejlede (sender alligevel): {str(e)[:120]}", flush=True)
     if tomt:
         try:
             db.log_handling("", "AI-Aura (telefon)", "system", "tomt opkald ignoreret",
-                            f"{fra or 'skjult nummer'}: lagde paa uden besked")
+                            f"{fra or 'skjult nummer'}: {(resume or 'lagde paa uden besked')[:150]}")
         except Exception:
             pass
         print(f"[retell] tomt opkald fra {fra} ignoreret (ingen besked/aerinde)", flush=True)
