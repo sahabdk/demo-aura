@@ -57,6 +57,15 @@ def forside():
 </div></body></html>"""
 
 
+@app.get("/adr/", response_class=HTMLResponse)
+@app.get("/adr", response_class=HTMLResponse)
+@app.get("/ref/", response_class=HTMLResponse)
+@app.get("/ref", response_class=HTMLResponse)
+def portal_uden_token():
+    """Vises hvis /adr/ eller /ref/ aabnes uden token (fx af GatewayAPI's godkendere)."""
+    return forside()
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
