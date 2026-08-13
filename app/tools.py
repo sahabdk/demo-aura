@@ -21,7 +21,10 @@ def fuzzy_find_customers(query, limit=8, with_scores=False):
     q = _norm(query)
     if not q:
         return []
-    tokens = [t for t in q.split() if len(t) >= 2]
+    # fyldord maa ikke taelle som soegeord ("Thomas paa Primavej" -> thomas + primavej)
+    stopord = {"på", "paa", "i", "hos", "ved", "og", "den", "det", "der", "en", "et",
+               "til", "fra", "med", "af", "som", "kunden", "kunde", "hedder"}
+    tokens = [t for t in q.split() if len(t) >= 2 and t not in stopord]
     # telefonnumre i soegningen: fjern +45/mellemrum saa de matcher hay's cifre
     cifre = "".join(ch for ch in q if ch.isdigit())
     if len(cifre) >= 8:
@@ -1387,7 +1390,9 @@ TOOLS = [
                            "ALDRIG en medarbejder; brug tildel_sag til det), leveringsadresse "
                            "(stedet arbejdet udføres - hører til SAGEN, ikke kunden). Returnerer sagsnummer.",
             "parameters": {"type": "object", "properties": {
-                "kunde": {"type": "string", "description": "kundens navn - værktøjet slår selv nummeret op"},
+                "kunde": {"type": "string", "description": "ALT brugeren sagde om kunden - navn OG "
+                          "vej/by hvis nævnt, fx 'Thomas på Primavej' (skiller navnebrødre ad). "
+                          "Værktøjet slår selv nummeret op"},
                 "customer_number": {"type": "string", "description": "brug denne hvis nummeret allerede kendes"},
                 "beskrivelse": {"type": "string"},
                 "projektnavn": {"type": "string"}, "reference": {"type": "string"},
