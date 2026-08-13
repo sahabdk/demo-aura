@@ -409,6 +409,23 @@ def try_command(chat_id, telegram_id, text):
     if t in ("/menu", "menu"):
         send_main_menu(chat_id)
         return True
+    # (hjælper: pause/start-besked til leder-gruppen, så ledelsen altid ved hvem der har stoppet/startet)
+    return _menu_kommandoer(chat_id, telegram_id, t, text)
+
+
+def _notify_leder_gruppe(afsender_chat_id, besked):
+    """Send besked til leder-gruppen (LEADER_GROUP_CHAT_ID) — men ikke hvis kommandoen
+    allerede blev skrevet I gruppen (så undgår vi dobbelt-besked)."""
+    import os as _os
+    gruppe = _os.environ.get("LEADER_GROUP_CHAT_ID", "")
+    if gruppe and str(gruppe) != str(afsender_chat_id):
+        try:
+            telegram.send_message(gruppe, besked)
+        except Exception:
+            pass
+
+
+def _menu_kommandoer(chat_id, telegram_id, t, text):
     if t in ("aura stop", "stop aura", "aura pause", "pause aura"):
         db.set_meta("aura_pauseret", "1")
         try:
@@ -417,6 +434,7 @@ def try_command(chat_id, telegram_id, text):
             pass
         telegram.send_message(chat_id, "⏸ Aura er sat på pause: alle ændringer er blokeret, "
                                        "indtil du skriver 'aura start'. Læsning og søgning virker stadig.")
+        _notify_leder_gruppe(chat_id, "⏸ Aura er sat på PAUSE af lederen — alle ændringer er blokeret.")
         return True
     if "economic" in t and any(w in t for w in ("test", "tjek", "status")):
         vis_economic_test(chat_id)
@@ -428,6 +446,7 @@ def try_command(chat_id, telegram_id, text):
         except Exception:
             pass
         telegram.send_message(chat_id, "▶️ Aura kører igen — alle funktioner er åbne.")
+        _notify_leder_gruppe(chat_id, "▶️ Aura er STARTET igen — alle funktioner er åbne.")
         return True
     mg = re.search(r"graphql\s+s[o\u00f8]g\s+(\S+)", text or "", re.I)   # DEBUG: "vis graphql s\u00f8g pause"
     if mg:
