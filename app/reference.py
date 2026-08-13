@@ -54,6 +54,12 @@ def scan_and_notify():
         navn = debtor.get("customer_name") or "kunde"
         adresse = (f"{debtor.get('customer_address','')} {debtor.get('customer_postalcode','')} "
                    f"{debtor.get('customer_city','')}").strip()
+        # Firmakunder har ofte MANGE arbejdssteder: brug sagens leveringsadresse i mailen,
+        # saa kunden kan se HVOR arbejdet blev udfoert (fallback: kundens egen adresse).
+        try:
+            leverings = os_api.delivery_addresses(cn)
+        except Exception:
+            leverings = []
         s["email"] = bool(email)
         s["sager"] = len(cases)
 
@@ -75,7 +81,17 @@ def scan_and_notify():
             if not email:
                 continue
 
-            sag_tekst = f"Sag {nr}: {case.get('description') or 'opgave'} – {adresse}".strip(" –")
+            sag_adresse = adresse
+            da_id = case.get("delivery_address")
+            if da_id:
+                for da in leverings:
+                    if str(da.get("id")) == str(da_id):
+                        a = (f"{da.get('address') or ''} {da.get('postalcode') or ''} "
+                             f"{da.get('city') or ''}").strip()
+                        if a:
+                            sag_adresse = a
+                        break
+            sag_tekst = f"Sag {nr}: {case.get('description') or 'opgave'} – {sag_adresse}".strip(" –")
             if not rec:
                 token = secrets.token_urlsafe(16)
                 db.create_ref_request(token, nr, cn)
