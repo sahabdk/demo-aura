@@ -74,7 +74,7 @@ def alle_tjek():
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY mangler - Aura kan IKKE svare!")
         r = requests.get(f"https://api.openai.com/v1/models/{OPENAI_MODEL}",
-                         headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}, timeout=10)
+                         headers={"Authorization": f"Bearer {OPENAI_API_KEY}"}, timeout=25)
         if r.status_code == 401:
             raise RuntimeError("nøglen er UGYLDIG - Aura kan IKKE svare!")
         if r.status_code == 404:
@@ -100,9 +100,12 @@ def alle_tjek():
         if not url:
             raise RuntimeError("INGEN webhook sat - botten modtager intet! Kør setWebhook-adressen (A8)")
         fejl = info.get("last_error_message")
+        fejl_tid = info.get("last_error_date") or 0
         ventende = info.get("pending_update_count", 0)
-        if fejl:
-            raise RuntimeError(f"seneste webhook-fejl: {fejl} ({ventende} beskeder i kø)")
+        # Telegram husker den SIDSTE fejl laenge - kun roed hvis fejlen er frisk (< 15 min)
+        if fejl and (time.time() - fejl_tid) < 900:
+            raise RuntimeError(f"webhook-fejl for {int((time.time()-fejl_tid)/60)} min siden: "
+                               f"{fejl} ({ventende} beskeder i kø)")
         return f"aktiv ({ventende} i kø)"
     ud.append(_tjek("Telegram-webhook", _tg_webhook))
 

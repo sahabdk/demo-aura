@@ -5,6 +5,7 @@
 - Ugentlig oversigt over forfaldne, ubetalte fakturaer til leder-gruppen (man kl. 08).
 """
 import logging
+import os
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -141,6 +142,69 @@ def status_vagt():
         print(f"[status_vagt] fejl: {str(e)[:200]}", flush=True)
 
 
+def sundheds_vagt():
+    """Hvert 10. min: koer sundhedstjek + kig efter nye fejl i handlingsloggen.
+    Skifter en status (groen<->roed), eller dukker nye fejl op, sendes en mail
+    til ALERT_EMAIL med titlen AURA FEJL. Foerste koersel saetter kun baseline."""
+    import json as _json
+    from . import sundhed, db
+    from .email import _send_resend
+
+    alert_til = os.environ.get("ALERT_EMAIL", "sahabdk@gmail.com")
+    try:
+        tjek = sundhed.alle_tjek()
+    except Exception as e:
+        print(f"[sundheds_vagt] tjek fejlede: {str(e)[:150]}", flush=True)
+        return
+    ny = {t["navn"]: {"ok": bool(t["ok"]), "detalje": t["detalje"]} for t in tjek}
+
+    linjer = []
+    try:
+        gammel = _json.loads(db.get_meta("sundhed_status") or "null")
+    except Exception:
+        gammel = None
+    if gammel is not None:
+        for navn, s in ny.items():
+            foer = (gammel.get(navn) or {}).get("ok")
+            if foer is None or foer == s["ok"]:
+                continue
+            if s["ok"]:
+                linjer.append(f"🟢 OK IGEN: {navn}")
+            else:
+                linjer.append(f"🔴 FEJL: {navn}\n   {s['detalje']}")
+
+    # nye fejl-linjer i handlingsloggen siden sidste koersel
+    sidste_fejl_ts = db.get_meta("sundhed_fejl_ts") or ""
+    nyeste_ts = sidste_fejl_ts
+    try:
+        for h in db.handlinger_seneste(antal=150):
+            ts = h.get("ts") or ""
+            if "fejl" in (h.get("handling") or "").lower() and ts > sidste_fejl_ts:
+                linjer.append(f"⚠️ NY FEJL i loggen ({ts}): {h.get('handling')} — "
+                              f"{(h.get('detaljer') or '')[:200]}")
+                nyeste_ts = max(nyeste_ts, ts)
+    except Exception:
+        pass
+
+    db.set_meta("sundhed_status", _json.dumps(ny))
+    if nyeste_ts != sidste_fejl_ts:
+        db.set_meta("sundhed_fejl_ts", nyeste_ts)
+    if gammel is None or not linjer:
+        return
+
+    kun_ok = all(l.startswith("🟢") for l in linjer)
+    emne = "AURA OK IGEN" if kun_ok else "AURA FEJL"
+    tekst = (f"{os.environ.get('FIRMA_NAVN', 'Aura')} — automatisk overvaagning "
+             f"({len(linjer)} aendring(er)):\n\n" + "\n\n".join(linjer)
+             + "\n\nSe detaljer i Pilly-dashboardet (🩺 Sundhed / 🚨 Fejl).")
+    try:
+        # bevidst UDEN testtilstand-filter: driftsalarmen skal altid frem
+        _send_resend(alert_til, emne, tekst)
+        print(f"[sundheds_vagt] alarm sendt til {alert_til}: {emne}", flush=True)
+    except Exception as e:
+        print(f"[sundheds_vagt] mail fejlede: {str(e)[:150]}", flush=True)
+
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone=TZ)
     sch.add_job(morning_digest, "cron", hour=7, minute=0)
@@ -148,6 +212,7 @@ def start_scheduler():
     sch.add_job(faktura_overview, "cron", day_of_week="mon", hour=8, minute=0)
     sch.add_job(reference_scan, "cron", day_of_week="mon-fri", hour="7-18", minute=0)  # hver hele time i arbejdstiden
     sch.add_job(status_vagt, "cron", minute="*/15")   # hvert 15. min: Åben -> Igangværende når planlagt tid er nået
+    sch.add_job(sundheds_vagt, "cron", minute="7,17,27,37,47,57")   # hvert 10. min: mail-alarm ved statusskift/nye fejl
     sch.start()
     log.info("scheduler kører")
     try:
