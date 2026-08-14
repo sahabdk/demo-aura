@@ -65,7 +65,8 @@ def scan_and_notify():
             continue
         cases = pr_kunde.get(str(cn), [])
 
-        email = (debtor.get("customer_email") or "").strip()
+        # faktureringsmail foerst, ellers alm. kundemail (samme prioritering som rykkere)
+        email = os_api.faktura_email(debtor) or ""
         navn = debtor.get("customer_name") or "kunde"
         adresse = (f"{debtor.get('customer_address','')} {debtor.get('customer_postalcode','')} "
                    f"{debtor.get('customer_city','')}").strip()

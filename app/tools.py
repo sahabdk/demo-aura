@@ -410,7 +410,9 @@ def send_paamindelse_email(args, ctx):
         debtor = os_api.get_debtor(nr) or {}
     except Exception:
         debtor = {}
-    email = debtor.get("customer_email")
+    # FAKTURERINGS-mailen fra ordrestyring har 1. prioritet (rykkere er fakturapost),
+    # derefter kundens alm. email, derefter e-conomic.
+    email = os_api.faktura_email(debtor)
     navn = debtor.get("customer_name")
     if not email:   # fallback: e-conomic-kundekortet
         try:

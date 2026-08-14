@@ -386,6 +386,17 @@ def assign_case(case_number, technician_id):
     return _data(_req("PUT", f"/cases/{case_number}", json={"main_technician": int(technician_id)}))
 
 
+def faktura_email(debtor):
+    """Mail til fakturapost (rykkere, referenceanmodninger): FAKTURERINGS-mailen
+    fra kundekortet har 1. prioritet, ellers kundens almindelige email."""
+    for k, v in (debtor or {}).items():
+        kl = str(k).lower()
+        if ("invoice" in kl or "faktura" in kl) and "mail" in kl and v and "@" in str(v):
+            return str(v).strip()
+    e = ((debtor or {}).get("customer_email") or "").strip()
+    return e or None
+
+
 # ---------- Leveringsadresser (delivery addresses) ----------
 
 def delivery_addresses(customer_number):
