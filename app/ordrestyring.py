@@ -345,13 +345,26 @@ def today_cases():
 _USERS = {"rows": [], "ts": 0.0}
 
 
-def users(force=False):
+def _bruger_er_aktiv(u):
+    """Kun AKTIVE medarbejdere skal kunne vaelges (menu, tildeling, opslag).
+    Feltnavnet varierer mellem systemer, saa vi tjekker de gaengse markoerer."""
+    for k, v in u.items():
+        kl = str(k).lower()
+        if kl in ("active", "is_active", "enabled") and v in (0, False, "0", "false"):
+            return False
+        if kl in ("disabled", "deleted", "deactivated", "archived", "inactive",
+                  "is_deleted", "hidden") and v in (1, True, "1", "true"):
+            return False
+    return True
+
+
+def users(force=False, alle=False):
     now = time.time()
-    if not force and _USERS["rows"] and (now - _USERS["ts"]) < 1800:
-        return _USERS["rows"]
-    _USERS["rows"] = _data(_req("GET", "/users")) or []
-    _USERS["ts"] = now
-    return _USERS["rows"]
+    if force or not _USERS["rows"] or (now - _USERS["ts"]) >= 1800:
+        _USERS["rows"] = _data(_req("GET", "/users")) or []
+        _USERS["ts"] = now
+    rows = _USERS["rows"]
+    return rows if alle else [u for u in rows if _bruger_er_aktiv(u)]
 
 
 def user_name(user_id):

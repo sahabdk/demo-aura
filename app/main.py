@@ -209,6 +209,21 @@ def admin_sag_raa(secret: str, nr: str):
     return ud
 
 
+@app.get("/admin/{secret}/medarbejdere-raa")
+def admin_medarbejdere_raa(secret: str):
+    """Raa medarbejder-data + hvem aktiv-filteret sorterer fra (fejlsoegning)."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    from . import ordrestyring as os_api
+    alle = os_api.users(force=True, alle=True)
+    aktive_ids = {u.get("id") for u in os_api.users()}
+    return {"antal_i_alt": len(alle),
+            "antal_aktive": len(aktive_ids),
+            "frasorteret": [u.get("fullName") or u.get("first_name") for u in alle
+                            if u.get("id") not in aktive_ids],
+            "raa": alle}
+
+
 @app.get("/admin/{secret}/refscan")
 def admin_refscan(secret: str):
     """Udloes reference-scanningen manuelt (til test) og vis diagnostikken."""
