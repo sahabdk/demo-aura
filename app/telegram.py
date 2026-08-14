@@ -180,6 +180,20 @@ def _til_tale(text: str) -> str:
     t = re.sub(r"\btlf\.?\b", "telefon", t, flags=re.I)
     t = t.replace("%", " procent")
 
+    # Etage-adresser: "2. th." skal LYDE som "anden sal til højre" (aldrig "to t h")
+    _ORDINAL = {1: "første", 2: "anden", 3: "tredje", 4: "fjerde", 5: "femte", 6: "sjette",
+                7: "syvende", 8: "ottende", 9: "niende", 10: "tiende", 11: "ellevte", 12: "tolvte"}
+    _SIDE = {"th": "til højre", "tv": "til venstre", "mf": "midt for"}
+
+    def _etage(m):
+        nr, side = int(m.group(1)), m.group(2).lower()
+        return f" {_ORDINAL.get(nr, str(nr) + '.')} sal {_SIDE[side]} "
+
+    t = re.sub(r"\b(\d{1,2})\.?\s*(?:sal\s*[, ]?\s*)?(th|tv|mf)\b\.?", _etage, t, flags=re.I)
+    t = re.sub(r"\bst\.?\s*(th|tv|mf)\b\.?",
+               lambda m: f" stuen {_SIDE[m.group(1).lower()]} ", t, flags=re.I)
+    t = re.sub(r"\bkld\.?\b", "kælderen", t, flags=re.I)
+
     def _repl(m):
         num = m.group(0)
         if "," in num or "." in num:
