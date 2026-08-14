@@ -18,6 +18,21 @@ log = logging.getLogger("aura.reference")
 
 # ---------- planlagt scanning ----------
 
+def _skal_rykkes_for_ref(case):
+    """Der rykkes KUN for reference på sager der er LUKKET eller IGANGVÆRENDE.
+    'Åben' (arbejdet er ikke påbegyndt) springes over - referencen kommer typisk
+    først, når arbejdet er i gang eller udført."""
+    if os_api.is_closed(case):
+        return True
+    sid = str(case.get("status"))
+    for st in os_api.case_statuses():
+        if str(st.get("id")) == sid:
+            t = (st.get("text") or "").lower()
+            return any(o in t for o in ("igang", "i gang", "påbegynd", "paabegynd",
+                                        "udfør", "udfoer", "færdig", "faerdig"))
+    return False
+
+
 def scan_and_notify():
     """Kører planlagt: find sager uden reference hos de store kunder og mail dem.
     Returnerer diagnostik pr. kunde, så vi kan se hvor evt. sager filtreres fra."""
@@ -40,7 +55,7 @@ def scan_and_notify():
             pr_kunde.setdefault(cnr, []).append(case)
 
     for cn in config.REF_CUSTOMERS:
-        s = {"sager": 0, "uden_ref": 0, "aabne_uden_ref": 0, "email": False,
+        s = {"sager": 0, "uden_ref": 0, "relevante_uden_ref": 0, "email": False,
              "oprettet": 0, "fejl": None}
         try:
             debtor = os_api.get_debtor(cn) or {}
@@ -75,9 +90,9 @@ def scan_and_notify():
                     db.mark_ref_done_by_case(nr, (case.get("yourref") or "").strip())
                 continue
             s["uden_ref"] += 1
-            if os_api.is_closed(case):
-                continue
-            s["aabne_uden_ref"] += 1
+            if not _skal_rykkes_for_ref(case):
+                continue   # 'Åben' (ikke påbegyndt) springes over - kun i gang/lukket rykkes
+            s["relevante_uden_ref"] += 1
             if not email:
                 continue
 
