@@ -305,6 +305,12 @@ def _set_kontakt_levering(sagsnummer, customer_number, args):
             out["kontaktperson"] = f"{info['navn']} ({handling} i Kontaktperson-kortet)"
         except Exception as e:
             out["kontaktperson_fejl"] = str(e)
+    if args.get("rekvirent"):
+        try:
+            info = os_api.saet_rekvirent(sagsnummer, args["rekvirent"])
+            out["rekvirent"] = f"{info['navn']} (sat i Rekvirent-feltet)"
+        except Exception as e:
+            out["rekvirent_fejl"] = str(e)
     return out
 
 
@@ -1404,7 +1410,8 @@ TOOLS = [
                 "customer_number": {"type": "string", "description": "brug denne hvis nummeret allerede kendes"},
                 "beskrivelse": {"type": "string"},
                 "projektnavn": {"type": "string"}, "reference": {"type": "string"},
-                "kontaktperson": {"type": "string"}, "leveringsadresse": {"type": "string"}},
+                "kontaktperson": {"type": "string"}, "leveringsadresse": {"type": "string"},
+                "rekvirent": {"type": "string", "description": "personen der har BESTILT arbejdet - sættes i sagens Rekvirent-felt"}},
                 "required": []},
         }},
     },
@@ -1413,11 +1420,12 @@ TOOLS = [
         "schema": {"type": "function", "function": {
             "name": "opdater_sag",
             "description": "Tilføj/ret felter på en EKSISTERENDE sag (opretter ALDRIG en ny). Brug når brugeren vil "
-                           "tilføje noget til en sag der findes, fx ret beskrivelse, sæt projektnavn, reference, kontaktperson eller leveringsadresse.",
+                           "tilføje noget til en sag der findes, fx ret beskrivelse, sæt projektnavn, reference, kontaktperson, rekvirent eller leveringsadresse.",
             "parameters": {"type": "object", "properties": {
                 "sagsnummer": {"type": "string"}, "beskrivelse": {"type": "string"},
                 "projektnavn": {"type": "string"}, "reference": {"type": "string"},
-                "kontaktperson": {"type": "string"}, "leveringsadresse": {"type": "string"}},
+                "kontaktperson": {"type": "string"}, "leveringsadresse": {"type": "string"},
+                "rekvirent": {"type": "string", "description": "personen der har BESTILT arbejdet - sættes i sagens Rekvirent-felt"}},
                 "required": ["sagsnummer"]},
         }},
     },

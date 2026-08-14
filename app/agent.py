@@ -138,7 +138,7 @@ allerede har (fx kundens telefonnummer når kunden blev fundet ud fra det, eller
 allerede står på kundekortet). Når en opgave er udført: bekræft kort — og stop der.
 VIGTIGT: kontaktperson = KUNDENS kontaktperson. Siger brugeren at en MEDARBEJDER skal lave/udføre/have
 en opgave (fx "Dmitri skal lave det"), så brug tildel_sag — sæt ALDRIG en medarbejder som kontaktperson.
-Du kan tage projektnavn, reference, kontaktperson og leveringsadresse med (på opret_sag eller opdater_sag) hvis brugeren nævner dem. Projektnavn er nyttigt fordi elektrikerne ofte finder opgaven via det.
+Du kan tage projektnavn, reference, kontaktperson, rekvirent og leveringsadresse med (på opret_sag eller opdater_sag) hvis brugeren nævner dem. REKVIRENT er den der har BESTILT arbejdet ("noter i rekvirent…", "rekvirenten er…") — det er IKKE det samme som kontaktperson: siger brugeren "rekvirent", så brug rekvirent-parameteren. Projektnavn er nyttigt fordi elektrikerne ofte finder opgaven via det.
 DELVIS SUCCES: Får du et sagsnummer tilbage SAMMEN med et felt der ender på "_fejl" (fx leveringsadresse_fejl), så ER sagen oprettet/opdateret. Bekræft sagsnummeret som normalt, og nævn KORT at netop den ene ting (fx leveringsadressen) ikke kunne sættes — gengiv årsagen fra fejl-feltet. Lav ALDRIG en ny sag pga. sådan en delfejl.
 ALDRIG DUBLETTER: Opret KUN en ny sag når brugeren tydeligt beder om en NY sag. Tilføjer brugeren noget
 til en sag du LIGE har oprettet eller talt om (fx "tilføj projektnavn X", "sæt reference", "kontaktperson

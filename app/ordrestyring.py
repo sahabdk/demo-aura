@@ -187,6 +187,23 @@ def update_case(case_number, **fields):
     return _data(_req("PUT", f"/cases/{case_number}", json=body))
 
 
+def saet_rekvirent(case_number, navn):
+    """Saet Rekvirent-feltet paa sagen. API-feltnavnet kendes ikke paa forhaand,
+    saa vi finder det paa den konkrete sag (noegler med 'rekvi'/'requis')."""
+    cur = get_case(case_number) or {}
+    felt = None
+    for k in cur.keys():
+        kl = str(k).lower()
+        if "rekvi" in kl or "requis" in kl:
+            felt = k
+            break
+    if not felt:
+        raise RuntimeError("kunne ikke finde et rekvirent-felt paa sagen i API'et - "
+                           "felter: " + ", ".join(sorted(cur.keys()))[:300])
+    _data(_req("PUT", f"/cases/{case_number}", json={felt: navn}))
+    return {"felt": felt, "navn": navn}
+
+
 def add_remark(case_number, tekst, dato_str):
     """Tilføjer en bemærkning og bevarer historikken."""
     cur = get_case(case_number)
