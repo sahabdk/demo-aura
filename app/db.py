@@ -98,6 +98,12 @@ def init_db():
                 c.execute(f"ALTER TABLE handlinger ADD COLUMN {kol}")
             except sqlite3.OperationalError:
                 pass
+        # Migration: stamdata-tjek (adr-portalen genbruges til manglende kundeoplysninger)
+        for kol in ("kundenummer TEXT", "felter TEXT"):
+            try:
+                c.execute(f"ALTER TABLE adr_anmodninger ADD COLUMN {kol}")
+            except sqlite3.OperationalError:
+                pass
 
 
 # ---- Brugere / roller ----
@@ -359,10 +365,19 @@ def set_last_seen_order(telegram_id, ts):
 
 # ---- Adresse-anmodninger (telefon-agentens SMS-link) ----
 
-def create_adr_request(token, telefon, navn=""):
+def create_adr_request(token, telefon, navn="", kundenummer="", felter=""):
     with conn() as c:
-        c.execute("INSERT OR IGNORE INTO adr_anmodninger(token, telefon, navn) VALUES(?,?,?)",
-                  (token, str(telefon or ""), navn or ""))
+        c.execute("INSERT OR IGNORE INTO adr_anmodninger(token, telefon, navn, kundenummer, felter) "
+                  "VALUES(?,?,?,?,?)",
+                  (token, str(telefon or ""), navn or "", str(kundenummer or ""), felter or ""))
+
+
+def adr_request_for_kunde(kundenummer):
+    """Seneste stamdata-anmodning for en kunde (til dedup: spoerg aldrig to gange)."""
+    with conn() as c:
+        row = c.execute("SELECT * FROM adr_anmodninger WHERE kundenummer=? ORDER BY rowid DESC LIMIT 1",
+                        (str(kundenummer),)).fetchone()
+        return dict(row) if row else None
 
 
 def get_adr_request(token):

@@ -212,12 +212,24 @@ input{{width:100%;padding:.6rem;margin:.3rem 0 1rem;border:1px solid #ccc;border
 button{{background:#1a7f37;color:#fff;border:0;padding:.7rem 1.4rem;border-radius:6px;font-size:1rem}}
 </style></head><body><h2>Vandt & Vandt</h2><p>{besked}</p>{form}</body></html>"""
 
-_ADR_FORM = """<form method="post">
-<label>Navn</label><input name="navn" value="{navn}" required>
-<label>Adresse (vej og nr.)</label><input name="adresse" required>
-<label>Postnummer</label><input name="postnr" required>
-<label>By</label><input name="by" required>
-<button type="submit">Send</button></form>"""
+_FELT_TEKST = {"navn": "Navn", "adresse": "Adresse (vej og nr.)", "postnr": "Postnummer",
+               "by": "By", "email": "Email"}
+
+
+def _adr_form(felter, navn=""):
+    """Byg formularen dynamisk - stamdata-links viser KUN de felter der mangler."""
+    dele = []
+    for f in felter:
+        typ = "email" if f == "email" else "text"
+        vaerdi = navn if f == "navn" else ""
+        dele.append(f'<label>{_FELT_TEKST.get(f, f)}</label>'
+                    f'<input name="{f}" type="{typ}" value="{vaerdi}" required>')
+    return '<form method="post">' + "".join(dele) + '<button type="submit">Send</button></form>'
+
+
+def _adr_felter(r):
+    felter = [f for f in (r.get("felter") or "").split(",") if f]
+    return felter or ["navn", "adresse", "postnr", "by"]
 
 
 def adr_side(token):
@@ -225,17 +237,45 @@ def adr_side(token):
     if not r:
         return _ADR_HTML.format(besked="Linket er ugyldigt eller udløbet.", form="")
     if r.get("status") == "done":
-        return _ADR_HTML.format(besked="Tak — vi har allerede modtaget din adresse. 👍", form="")
-    return _ADR_HTML.format(besked="Tak for dit opkald! Skriv din adresse herunder, så vi har den helt rigtigt.",
-                            form=_ADR_FORM.format(navn=(r.get("navn") or "")))
+        return _ADR_HTML.format(besked="Tak — vi har allerede modtaget dine oplysninger. 👍", form="")
+    if r.get("kundenummer"):
+        besked = "Tak fordi du valgte os! Vi mangler et par oplysninger i vores kartotek — udfyld dem venligst herunder."
+    else:
+        besked = "Tak for dit opkald! Skriv din adresse herunder, så vi har den helt rigtigt."
+    return _ADR_HTML.format(besked=besked, form=_adr_form(_adr_felter(r), navn=(r.get("navn") or "")))
 
 
 def adr_submit(token, form):
     r = db.get_adr_request(token)
     if not r or r.get("status") == "done":
         return adr_side(token)
-    navn = (form.get("navn") or "").strip()
-    adresse = f"{(form.get('adresse') or '').strip()}, {(form.get('postnr') or '').strip()} {(form.get('by') or '').strip()}"
+    felter = _adr_felter(r)
+    svar = {f: (form.get(f) or "").strip() for f in felter}
+    navn = svar.get("navn") or (r.get("navn") or "")
+    vist = ", ".join(f"{_FELT_TEKST.get(f, f)}: {v}" for f, v in svar.items() if v)
+
+    if r.get("kundenummer"):
+        # STAMDATA-flow: skriv de udfyldte felter direkte ind paa kundekortet i ordrestyring
+        try:
+            aendringer = {f: v for f, v in svar.items() if v and f in ("adresse", "postnr", "by", "email")}
+            if aendringer:
+                os_api.update_debtor(r["kundenummer"], **aendringer)
+            db.mark_adr_done(token, navn, vist)
+            if LEADER_GROUP_CHAT_ID:
+                telegram.send_leader(LEADER_GROUP_CHAT_ID,
+                                     f"📇 Kundekort udfyldt af kunden selv (kunde {r['kundenummer']}"
+                                     f"{' - ' + navn if navn else ''}):\n{vist}\n→ opdateret i ordrestyring")
+            db.log_handling("", "Aura (stamdata)", "system", "kundekort opdateret af kunde",
+                            f"kunde {r['kundenummer']}: {vist}")
+        except Exception as e:
+            print(f"[stamdata] sync-fejl: {str(e)[:200]}", flush=True)
+            db.log_handling("", "Aura (stamdata)", "system", "stamdata sync-fejl",
+                            f"kunde {r.get('kundenummer')}: {str(e)[:150]}")
+            return _ADR_HTML.format(besked="Noget gik galt — prøv venligst igen om lidt.",
+                                    form=_adr_form(felter, navn))
+        return _ADR_HTML.format(besked="Tak! Vi har modtaget dine oplysninger. 👍", form="")
+
+    adresse = f"{svar.get('adresse', '')}, {svar.get('postnr', '')} {svar.get('by', '')}".strip(", ")
     db.mark_adr_done(token, navn, adresse)
     if LEADER_GROUP_CHAT_ID:
         telegram.send_leader(LEADER_GROUP_CHAT_ID,

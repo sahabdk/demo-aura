@@ -106,7 +106,8 @@ def admin_data(secret: str):
             "pauseret": db.get_meta("aura_pauseret") == "1",
             "testtilstand": db.get_meta("testtilstand") == "1",
             "funktioner": {n: db.funktion_til(n)
-                           for n in ("rykkere", "sms", "statusvagt", "telefon", "referencescan")},
+                           for n in ("rykkere", "sms", "statusvagt", "telefon", "referencescan",
+                                     "stamdatatjek")},
             "graenser": {"bremse": db.graense("bremse", 15),
                          "statusvagt": db.graense("statusvagt", 15)},
             "brugere": [{"navn": u["navn"], "rolle": u["rolle"],
@@ -207,6 +208,15 @@ def admin_sag_raa(secret: str, nr: str):
         except Exception as e:
             ud[f"graphql_{typenavn}_fejl"] = str(e)[:150]
     return ud
+
+
+@app.get("/admin/{secret}/kunde/{nr}")
+def admin_kunde_raa(secret: str, nr: str):
+    """Kundens RAA felter fra v2 (fejlsoegning af feltnavne, fx faktura-email)."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    from . import ordrestyring as os_api
+    return {"v2_debtor": os_api.get_debtor(nr)}
 
 
 @app.get("/admin/{secret}/medarbejdere-raa")

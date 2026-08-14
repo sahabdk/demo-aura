@@ -142,6 +142,68 @@ def status_vagt():
         print(f"[status_vagt] fejl: {str(e)[:200]}", flush=True)
 
 
+def stamdata_tjek():
+    """LUKKEDE sager: mangler kunden email/adresse/postnr/by paa kundekortet, faar de
+    en SMS med et personligt link, hvor de udfylder KUN det manglende - svaret
+    synkroniseres direkte ind i ordrestyring. Hver kunde spoerges hoejst EN gang."""
+    if not db.funktion_til("stamdatatjek"):
+        return
+    import secrets as _secrets
+    from . import retell
+    app_url = os.environ.get("APP_BASE_URL", "").rstrip("/")
+    if not app_url:
+        return
+    firma = os.environ.get("FIRMA_NAVN", "os")
+    sendt = 0
+    try:
+        sager = os_api.recent_cases(days=14)
+    except Exception:
+        log.exception("stamdata: kunne ikke hente sager")
+        return
+    set_kunder = set()
+    for c in sager:
+        if not os_api.is_closed(c):
+            continue   # KUN lukkede ordrer tjekkes
+        kn = str(c.get("customer_number") or "")
+        if not kn or kn in set_kunder:
+            continue
+        set_kunder.add(kn)
+        try:
+            d = os_api.get_debtor(kn) or {}
+        except Exception:
+            continue
+        mangler = [f for f, felt in (("email", "customer_email"), ("adresse", "customer_address"),
+                                     ("postnr", "customer_postalcode"), ("by", "customer_city"))
+                   if not str(d.get(felt) or "").strip()]
+        if not mangler:
+            continue
+        tlf = (d.get("customer_mobile") or d.get("customer_telephone") or "").strip()
+        if not tlf:
+            db.log_handling("", "Aura (stamdata)", "system", "stamdata mangler - ingen tlf",
+                            f"kunde {kn} ({d.get('customer_name')}): mangler {','.join(mangler)}")
+            continue
+        if db.adr_request_for_kunde(kn):
+            continue   # allerede spurgt en gang - aldrig sms-spam
+        token = _secrets.token_urlsafe(16)
+        db.create_adr_request(token, tlf, d.get("customer_name") or "",
+                              kundenummer=kn, felter=",".join(mangler))
+        link = f"{app_url}/adr/{token}"
+        tekst = (db.get_meta("skabelon_sms_stamdata")
+                 or f"Tak fordi du valgte {firma}. Vi mangler et par oplysninger i vores "
+                    "kartotek - udfyld dem venligst her: {link}")
+        try:
+            ret = retell.send_sms(tlf, tekst.replace("{link}", link))
+            db.log_handling("", "Aura (stamdata)", "system", "stamdata-sms sendt",
+                            f"kunde {kn} ({d.get('customer_name')}): mangler "
+                            f"{','.join(mangler)} -> {tlf} [{ret}]")
+            sendt += 1
+        except Exception as e:
+            db.log_handling("", "Aura (stamdata)", "system", "stamdata-sms fejl",
+                            f"kunde {kn}: {str(e)[:120]}")
+        if sendt >= 10:   # loft pr. koersel - ro paa
+            break
+
+
 def sundheds_vagt():
     """Hvert 10. min: koer sundhedstjek + kig efter nye fejl i handlingsloggen.
     Skifter en status (groen<->roed), eller dukker nye fejl op, sendes en mail
@@ -213,6 +275,7 @@ def start_scheduler():
     sch.add_job(reference_scan, "cron", day_of_week="mon-fri", hour="7-18", minute=0)  # hver hele time i arbejdstiden
     sch.add_job(status_vagt, "cron", minute="*/15")   # hvert 15. min: Åben -> Igangværende når planlagt tid er nået
     sch.add_job(sundheds_vagt, "cron", minute="7,17,27,37,47,57")   # hvert 10. min: mail-alarm ved statusskift/nye fejl
+    sch.add_job(stamdata_tjek, "cron", day_of_week="mon-fri", hour="9,13,16", minute=45)  # lukkede sager: manglende kundedata -> sms
     sch.start()
     log.info("scheduler kører")
     try:
