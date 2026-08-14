@@ -105,9 +105,11 @@ def admin_data(secret: str):
             "tid": now_local().isoformat(timespec="seconds"),
             "pauseret": db.get_meta("aura_pauseret") == "1",
             "testtilstand": db.get_meta("testtilstand") == "1",
-            "funktioner": {n: db.funktion_til(n)
-                           for n in ("rykkere", "sms", "statusvagt", "telefon", "referencescan",
-                                     "stamdatatjek")},
+            "funktioner": {**{n: db.funktion_til(n)
+                              for n in ("rykkere", "sms", "telefon", "referencescan",
+                                        "stamdatatjek")},
+                           # statusvagt er opt-in: kun "1" betyder taendt
+                           "statusvagt": db.get_meta("funk_statusvagt") == "1"},
             "graenser": {"bremse": db.graense("bremse", 15),
                          "statusvagt": db.graense("statusvagt", 15)},
             "brugere": [{"navn": u["navn"], "rolle": u["rolle"],
@@ -132,7 +134,8 @@ async def admin_indstilling(secret: str, request: Request):
         raise HTTPException(403, "forkert admin-noegle")
     b = await request.json()
     noegle = str(b.get("noegle") or "")
-    FUNKTIONER = ("funk_rykkere", "funk_sms", "funk_statusvagt", "funk_telefon", "funk_referencescan")
+    FUNKTIONER = ("funk_rykkere", "funk_sms", "funk_statusvagt", "funk_telefon",
+                  "funk_referencescan", "funk_stamdatatjek")
     GRAENSER = ("graense_bremse", "graense_statusvagt")
     if noegle in ("testtilstand", "aura_pauseret") or noegle in FUNKTIONER:
         vaerdi = "1" if b.get("vaerdi") else "0"

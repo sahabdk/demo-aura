@@ -87,8 +87,11 @@ def status_vagt():
     """Hver time: Åbne sager hvor den planlagte starttid er nået, skiftes automatisk
     til 'Igangværende'. Lukket/Aflyst/øvrige statusser røres aldrig."""
     import time as _t
-    if not db.funktion_til("statusvagt"):
-        return   # slaaet fra i kontrolpanelet
+    # Status-vagten er SLUKKET som standard (kunden oensker ikke auto-statusskift).
+    # Den koerer KUN ved aktivt tilvalg i dashboardet - og overlever dermed ogsaa
+    # en volume-wipe som slukket.
+    if db.get_meta("funk_statusvagt") != "1":
+        return
     if db.get_meta("aura_pauseret") == "1":
         print("[status_vagt] springes over — Aura er sat på pause", flush=True)
         return
