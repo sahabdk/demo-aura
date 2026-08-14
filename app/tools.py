@@ -290,12 +290,13 @@ def opdater_kunde(args, ctx):
 
 
 def _set_kontakt_levering(sagsnummer, customer_number, args):
-    """Sæt kontaktperson (sagens fri-tekst contact-felt) og/eller leveringsadresse
-    (find-eller-opret en leveringsadresse hos kunden og sæt dens id på sagen)."""
+    """Sæt kontaktperson (sagens fri-tekst contact-felt).
+    OBS: leveringsadresse-FELTET bruges ikke længere - firmaets praksis er, at
+    arbejdsstedets adresse står FORREST i sagens beskrivelse (se _med_adresse)."""
     out = {}
     if not sagsnummer:
         return out
-    # Begge dele er IKKE-fatale: en fejl her må aldrig vælte selve sag-oprettelsen.
+    # IKKE-fatal: en fejl her må aldrig vælte selve sag-oprettelsen.
     if args.get("kontaktperson"):
         try:
             kn = customer_number or (os_api.get_case(sagsnummer) or {}).get("customer_number")
@@ -304,17 +305,19 @@ def _set_kontakt_levering(sagsnummer, customer_number, args):
             out["kontaktperson"] = f"{info['navn']} ({handling} i Kontaktperson-kortet)"
         except Exception as e:
             out["kontaktperson_fejl"] = str(e)
-    if args.get("leveringsadresse"):
-        try:
-            kn = customer_number or (os_api.get_case(sagsnummer) or {}).get("customer_number")
-            if not kn:
-                out["leveringsadresse_fejl"] = "kunne ikke finde kundenummer på sagen"
-            else:
-                info = os_api.link_leveringsadresse(sagsnummer, kn, args["leveringsadresse"])
-                out["leveringsadresse"] = ("oprettet og sat" if info.get("oprettet") else "sat") + f": {info.get('adresse')}"
-        except Exception as e:
-            out["leveringsadresse_fejl"] = str(e)
     return out
+
+
+def _med_adresse(beskrivelse, adresse):
+    """Firmaets praksis: arbejdsstedets adresse staar FORREST i beskrivelsen.
+    Saetter den kun ind, hvis den ikke allerede er naevnt."""
+    b = (beskrivelse or "").strip()
+    a = (adresse or "").strip().rstrip(".")
+    if not a:
+        return b
+    if _norm(a) in _norm(b):
+        return b
+    return f"{a}. {b}" if b else a
 
 
 def opret_sag(args, ctx):
@@ -340,7 +343,7 @@ def opret_sag(args, ctx):
         return {"fejl": "angiv customer_number eller kunde (kundens navn)"}
     res = os_api.create_case(
         customer_number=kn,
-        beskrivelse=args.get("beskrivelse", ""),
+        beskrivelse=_med_adresse(args.get("beskrivelse", ""), args.get("leveringsadresse")),
         reference=args.get("reference", ""),
         projektnavn=args.get("projektnavn", ""),
     )
@@ -365,6 +368,10 @@ def opdater_sag(args, ctx):
     if afvist:
         return afvist
     beskrivelse = args.get("beskrivelse")
+    if args.get("leveringsadresse"):
+        if beskrivelse is None:
+            beskrivelse = (os_api.get_case(args["sagsnummer"]) or {}).get("description", "")
+        beskrivelse = _med_adresse(beskrivelse, args["leveringsadresse"])
     if args.get("projektnavn"):
         cur = os_api.get_case(args["sagsnummer"]) or {}
         beskrivelse = os_api._med_projekt(beskrivelse or cur.get("description", ""), args["projektnavn"])
@@ -1388,7 +1395,8 @@ TOOLS = [
                            "kunden, søg IKKE først og spørg IKKE om bekræftelse mere end én gang. "
                            "Valgfrit: projektnavn, reference, kontaktperson (KUNDENS kontaktperson - "
                            "ALDRIG en medarbejder; brug tildel_sag til det), leveringsadresse "
-                           "(stedet arbejdet udføres - hører til SAGEN, ikke kunden). Returnerer sagsnummer.",
+                           "(arbejdsstedets adresse - sættes automatisk forrest i sagens "
+                           "beskrivelse, firmaets praksis). Returnerer sagsnummer.",
             "parameters": {"type": "object", "properties": {
                 "kunde": {"type": "string", "description": "ALT brugeren sagde om kunden - navn OG "
                           "vej/by hvis nævnt, fx 'Thomas på Primavej' (skiller navnebrødre ad). "
