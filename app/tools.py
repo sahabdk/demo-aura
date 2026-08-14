@@ -390,6 +390,37 @@ def opdater_sag(args, ctx):
     return {"resultat": f"Sag {args['sagsnummer']} opdateret", **ekstra}
 
 
+def saet_status(args, ctx):
+    """Skift en sags status til en VILKÅRLIG af firmaets statusser (Aflyst, Igangværende,
+    Kræver genbesøg, Kunden var ikke hjemme, ...). Matcher på status-teksten."""
+    sag = args["sagsnummer"]
+    afvist = _ejer_eller_afvis(sag, ctx)
+    if afvist:
+        return afvist
+    oensket = _norm(str(args.get("status") or ""))
+    if not oensket:
+        return {"fejl": "angiv den ønskede status"}
+    statusser = os_api.case_statuses()
+    best, best_r = None, 0.0
+    for s in statusser:
+        tekst = _norm(s.get("text") or "")
+        if not tekst:
+            continue
+        if oensket == tekst or oensket in tekst or tekst in oensket:
+            best, best_r = s, 1.0
+            break
+        r = difflib.SequenceMatcher(None, oensket, tekst).ratio()
+        if r > best_r:
+            best, best_r = s, r
+    if not best or best_r < 0.7:
+        return {"resultat": "Jeg kender ikke den status. Firmaets statusser er: "
+                            + ", ".join(filter(None, ((s.get("text") or "") for s in statusser)))
+                            + ". Spørg brugeren hvilken der menes."}
+    os_api.update_case(sag, status=int(best.get("id")))
+    os_api.ryd_kortcache()
+    return {"resultat": f"Sag {sag}: status sat til '{best.get('text')}'"}
+
+
 def afslut_sag(args, ctx):
     # Medarbejdere (jun) må kun færdigmelde sager der er tildelt DEM
     if _ejer_eller_afvis(args["sagsnummer"], ctx):
@@ -1442,6 +1473,21 @@ TOOLS = [
         }},
     },
     {
+        "func": saet_status, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "saet_status",
+            "description": "Skift en sags STATUS til en af firmaets statusser (fx Aflyst, "
+                           "Igangværende, Kræver genbesøg, Kunden var ikke hjemme). Brug ved "
+                           "'ændr status på sag X til Y', 'ordren skal aflyses', 'kunden var ikke "
+                           "hjemme'. En status-ændring er IKKE en bemærkning og IKKE en "
+                           "færdigmelding - brug kun afslut_sag når arbejdet reelt er udført.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"},
+                "status": {"type": "string", "description": "den ønskede status som brugeren sagde den"}},
+                "required": ["sagsnummer", "status"]},
+        }},
+    },
+    {
         "func": send_paamindelse_email, "roles": {"pro"},   # KUN leder
         "schema": {"type": "function", "function": {
             "name": "send_paamindelse_email",
@@ -1514,6 +1560,7 @@ MUTERENDE = {
     "opret_kunde": "kunde oprettet", "opdater_kunde": "kunde opdateret",
     "opret_sag": "sag oprettet", "opdater_sag": "sag opdateret",
     "skriv_bemaerkning": "bemærkning skrevet", "afslut_sag": "sag færdigmeldt",
+    "saet_status": "status ændret",
     "registrer_timer": "timer registreret", "tilfoej_vare": "vare tilføjet",
     "send_paamindelse_email": "rykker sendt", "saet_rykker_niveau": "rykker-tæller sat",
     "husk_aftale": "aftale gemt", "tildel_sag": "sag tildelt", "planlaeg_sag": "sag planlagt",
