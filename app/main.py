@@ -187,6 +187,40 @@ async def admin_skabelon_gem(secret: str, request: Request):
     return {"ok": True}
 
 
+@app.get("/admin/{secret}/sag/{nr}")
+def admin_sag_raa(secret: str, nr: str):
+    """Vis sagens RAA felter fra baade v2 REST og GraphQL (fejlsøgning af feltnavne)."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    from . import ordrestyring as os_api, os_graphql as os_gql
+    ud = {}
+    try:
+        ud["v2_case"] = os_api.get_case(nr)
+    except Exception as e:
+        ud["v2_fejl"] = str(e)[:200]
+    for typenavn in ("Case", "UpdateCaseInput", "CreateCaseInput"):
+        try:
+            r = os_gql._gql('{ __type(name: "%s") { fields { name } inputFields { name } } }' % typenavn)
+            t = (r.get("__type") or {})
+            navne = [f["name"] for f in (t.get("fields") or t.get("inputFields") or [])]
+            ud[f"graphql_{typenavn}"] = sorted(navne)
+        except Exception as e:
+            ud[f"graphql_{typenavn}_fejl"] = str(e)[:150]
+    return ud
+
+
+@app.get("/admin/{secret}/refscan")
+def admin_refscan(secret: str):
+    """Udloes reference-scanningen manuelt (til test) og vis diagnostikken."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    from . import reference
+    stats = reference.scan_and_notify()
+    db.log_handling("", "Pilly-dashboard", "system", "reference-scan koert manuelt",
+                    str(stats)[:200])
+    return stats
+
+
 @app.post("/admin/{secret}/brugere")
 async def admin_bruger_tilfoej(secret: str, request: Request):
     """Tilfoej/opdater en bruger fra Pilly-dashboardet (kilde=admin: overlever genstart)."""
