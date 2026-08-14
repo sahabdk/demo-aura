@@ -345,9 +345,16 @@ def today_cases():
 _USERS = {"rows": [], "ts": 0.0}
 
 
+# Hos Vandt & Vandt: medarbejder-status 999912 = INAKTIV, 999913 = aktiv
+# (bekraeftet mod ordrestyring-web 14/8-26). Kan overstyres pr. kunde via env.
+_USER_INAKTIV_STATUS = os.environ.get("USER_INACTIVE_STATUS", "999912")
+
+
 def _bruger_er_aktiv(u):
     """Kun AKTIVE medarbejdere skal kunne vaelges (menu, tildeling, opslag).
-    Feltnavnet varierer mellem systemer, saa vi tjekker de gaengse markoerer."""
+    Vi frasorterer paa INAKTIV-status (fail-open: ukendte statusser vises)."""
+    if str(u.get("status")) == str(_USER_INAKTIV_STATUS):
+        return False
     for k, v in u.items():
         kl = str(k).lower()
         if kl in ("active", "is_active", "enabled") and v in (0, False, "0", "false"):
