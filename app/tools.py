@@ -332,9 +332,21 @@ def opret_sag(args, ctx):
         # Slaa kunden op ud fra navnet - saa AI'en ikke selv skal jonglere soeg->vaelg->opret.
         hits = fuzzy_find_customers(str(args["kunde"]), limit=3, with_scores=True)
         staerke = [(s, d) for s, d in hits if s >= 0.85]
+        if not staerke and hits:
+            # NAERLIGGENDE kandidater (fx hoerefejl i navnet): foreslaa dem FOER ny kunde naevnes
+            return {"resultat": "Ingen sikker match - men der er nærliggende kandidater "
+                                "(navnet kan være hørt forkert). Spørg brugeren kort om det er "
+                                "en af dem (vis navn + adresse). Foreslå ALDRIG at oprette en ny "
+                                "kunde, før brugeren har afvist kandidaterne.",
+                    "kandidater": [{"customer_number": d.get("customer_number"),
+                                    "navn": d.get("customer_name"),
+                                    "adresse": f"{d.get('customer_address') or ''}, "
+                                               f"{d.get('customer_city') or ''}".strip(", ")}
+                                   for s, d in hits]}
         if not staerke:
-            return {"resultat": f"Ingen eksisterende kunde matcher '{args['kunde']}'. "
-                                "Er det en helt ny kunde, saa brug opret_kunde foerst."}
+            return {"resultat": f"Ingen eksisterende kunde matcher '{args['kunde']}' - heller "
+                                "ikke tilnærmelsesvis. Sig det til brugeren, og spørg om det er "
+                                "en HELT ny kunde (opret_kunde).",}
         if len(staerke) == 1 or staerke[0][0] >= staerke[1][0] + 0.08:
             kn = str(staerke[0][1].get("customer_number"))
         else:
