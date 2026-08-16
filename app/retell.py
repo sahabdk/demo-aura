@@ -192,8 +192,7 @@ def haandter_afsluttet_opkald(payload):
             linjer.append(f"⚠️ Adresse-SMS kunne ikke sendes ({sms_status}).")
             print(f"[retell] sms-fejl: {str(e)[:200]}", flush=True)
 
-    if LEADER_GROUP_CHAT_ID:
-        telegram.send_leader(LEADER_GROUP_CHAT_ID, "\n".join(linjer))
+    telegram.send_leader(LEADER_GROUP_CHAT_ID, "\n".join(linjer))
     try:
         db.log_handling("", "AI-Aura (telefon)", "system", "telefonbesked modtaget",
                         f"{navn or 'ukendt'} / {fra}: {resume[:200]}")
@@ -261,8 +260,7 @@ def adr_submit(token, form):
             if aendringer:
                 os_api.update_debtor(r["kundenummer"], **aendringer)
             db.mark_adr_done(token, navn, vist)
-            if LEADER_GROUP_CHAT_ID:
-                telegram.send_leader(LEADER_GROUP_CHAT_ID,
+            telegram.send_leader(LEADER_GROUP_CHAT_ID,
                                      f"📇 Kundekort udfyldt af kunden selv (kunde {r['kundenummer']}"
                                      f"{' - ' + navn if navn else ''}):\n{vist}\n→ opdateret i ordrestyring")
             db.log_handling("", "Aura (stamdata)", "system", "kundekort opdateret af kunde",
@@ -277,8 +275,7 @@ def adr_submit(token, form):
 
     adresse = f"{svar.get('adresse', '')}, {svar.get('postnr', '')} {svar.get('by', '')}".strip(", ")
     db.mark_adr_done(token, navn, adresse)
-    if LEADER_GROUP_CHAT_ID:
-        telegram.send_leader(LEADER_GROUP_CHAT_ID,
+    telegram.send_leader(LEADER_GROUP_CHAT_ID,
                               f"🏠 Adresse modtaget fra telefonkunde:\n{navn}\n{adresse}\nTelefon: {r.get('telefon')}")
     try:
         db.log_handling("", "AI-Aura (telefon)", "system", "adresse modtaget",

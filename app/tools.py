@@ -1047,9 +1047,7 @@ def besked_til_leder(args, ctx):
     tekst = (args.get("besked") or "").strip()
     if not tekst:
         return {"fejl": "beskeden er tom"}
-    from .config import LEADER_GROUP_CHAT_ID
-    if not LEADER_GROUP_CHAT_ID:
-        return {"fejl": "leder-chatten er ikke sat op endnu"}
+    from .config import LEADER_GROUP_CHAT_ID   # tom = send direkte til alle ledere
     # Dubletvagt: praecis samme besked inden for 10 min sendes ikke igen
     import hashlib, time as _t
     fingeraftryk = hashlib.sha256(f"{ctx.get('telegram_id')}:{tekst}".encode()).hexdigest()[:16]

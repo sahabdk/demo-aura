@@ -418,11 +418,19 @@ def _notify_leder_gruppe(afsender_chat_id, besked):
     allerede blev skrevet I gruppen (så undgår vi dobbelt-besked)."""
     import os as _os
     gruppe = _os.environ.get("LEADER_GROUP_CHAT_ID", "")
-    if gruppe and str(gruppe) != str(afsender_chat_id):
-        try:
-            telegram.send_message(gruppe, besked)
-        except Exception:
-            pass
+    if gruppe:
+        if str(gruppe) != str(afsender_chat_id):
+            try:
+                telegram.send_message(gruppe, besked)
+            except Exception:
+                pass
+        return
+    for u in db.all_users():   # ingen gruppe: direkte til alle ANDRE ledere
+        if u.get("rolle") == "pro" and str(u["telegram_id"]) != str(afsender_chat_id):
+            try:
+                telegram.send_message(u["telegram_id"], besked)
+            except Exception:
+                pass
 
 
 def _menu_kommandoer(chat_id, telegram_id, t, text):

@@ -60,16 +60,38 @@ def soon_reminders():
 
 
 def faktura_overview():
-    """Mandags-oversigt: kun hvis der er forfaldne fakturaer (ellers tavst).
-    Viser kort med detaljer + 'Send rykker'-knap pr. faktura (samme som menuen)."""
-    if not LEADER_GROUP_CHAT_ID:
-        return
+    """Mandags-oversigt over forfaldne fakturaer - tavs hvis der ingen er.
+    Sendes som EMAIL til lederen (leder_email i dashboardet / LEADER_EMAIL i Railway).
+    Er ingen leder-mail sat, sendes den i Telegram direkte til alle ledere."""
     from .tools import forfaldne_fakturaer
-    if not forfaldne_fakturaer({}, {}).get("fakturaer"):
+    fakturaer = forfaldne_fakturaer({}, {}).get("fakturaer") or []
+    if not fakturaer:
         return
+    leder_mail = (db.get_meta("leder_email") or os.environ.get("LEADER_EMAIL", "")).strip()
+    if leder_mail:
+        linjer = []
+        for f in fakturaer[:50]:
+            dage = f.get("dage_forsinket")
+            rykk = f.get("antal_rykkere") or 0
+            linjer.append(f"- {f['kunde']}: {f['beloeb']} kr, forfald {f['forfald']}"
+                          + (f", {dage} dage forsinket" if dage else "")
+                          + (f", {rykk} rykker(e) sendt" if rykk else ", ingen rykker sendt"))
+        tekst = (f"God morgen.\n\nDer er {len(fakturaer)} forfaldne, ubetalte fakturaer:\n\n"
+                 + "\n".join(linjer)
+                 + "\n\nSend rykkere via Aura i Telegram: skriv 'forfaldne fakturaer'.")
+        try:
+            from .email import _send
+            _send(leder_mail, "Forfaldne fakturaer - ugens overblik", tekst)
+            db.log_handling("", "Aura", "system", "faktura-ugeoversigt mailet",
+                            f"{leder_mail}: {len(fakturaer)} fakturaer")
+            return
+        except Exception:
+            log.exception("faktura-mail fejlede - falder tilbage til Telegram")
     from . import menu
-    telegram.send_message(LEADER_GROUP_CHAT_ID, "God morgen! Her er ugens forfaldne fakturaer:")
-    menu.vis_forfaldne(LEADER_GROUP_CHAT_ID)
+    for u in db.all_users():
+        if u.get("rolle") == "pro":
+            telegram.send_message(u["telegram_id"], "God morgen! Her er ugens forfaldne fakturaer:")
+            menu.vis_forfaldne(u["telegram_id"])
 
 
 def reference_scan():
@@ -111,8 +133,8 @@ def status_vagt():
         for c in os_api.cases_paged():
             if len(skiftet) >= MAX_SKIFT:
                 print(f"[status_vagt] STOP: naaede loftet paa {MAX_SKIFT} skift i en koersel", flush=True)
-                if LEADER_GROUP_CHAT_ID:
-                    telegram.send_message(LEADER_GROUP_CHAT_ID,
+                if True:
+                    telegram.send_leader(LEADER_GROUP_CHAT_ID,
                                           f"⚠️ Status-vagten stoppede efter {MAX_SKIFT} automatiske skift i én "
                                           "kørsel (sikkerhedsloft). Tjek at planlægningen ser rigtig ud — resten "
                                           "tages i næste kørsel.")
@@ -137,7 +159,7 @@ def status_vagt():
                         pass
                 except Exception as e:
                     print(f"[status_vagt] kunne ikke skifte sag {nr}: {str(e)[:150]}", flush=True)
-        if skiftet and LEADER_GROUP_CHAT_ID:
+        if skiftet:
             telegram.send_leader(LEADER_GROUP_CHAT_ID,
                                   "🔄 Automatisk status: sag " + ", ".join(skiftet)
                                   + " er nu Igangværende (planlagt tid nået).")

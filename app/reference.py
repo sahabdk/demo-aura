@@ -288,8 +288,6 @@ def scan_and_links(maks=20):
 
 
 def _notify_leder(rec, reference):
-    if not config.LEADER_GROUP_CHAT_ID:
-        return
     try:
         navn = (os_api.get_debtor(rec["customer_number"]) or {}).get("customer_name") or rec["customer_number"]
     except Exception:

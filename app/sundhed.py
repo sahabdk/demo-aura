@@ -110,6 +110,8 @@ def alle_tjek():
     ud.append(_tjek("Telegram-webhook", _tg_webhook))
 
     def _retell_seneste():
+        if db.get_meta("funk_telefon") != "1":
+            return "fravalgt af kunden (telefon-agenten er slået fra)"
         for h in db.handlinger_seneste(antal=300):
             if h.get("handling") == "telefonbesked modtaget":
                 return f"seneste opkald behandlet: {h.get('ts')}"

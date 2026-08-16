@@ -20,14 +20,20 @@ def send_message(chat_id, text: str, reply_to=None):
 
 
 def send_leader(chat_id, text: str):
-    """Send en notifikation til lederen OG gem den i samtalehukommelsen,
-    saa Aura forstaar opfoelgende svar som 'ja det maa han gerne'."""
-    send_message(chat_id, text)
-    try:
-        from . import db
-        db.save_message(chat_id, "assistant", text)
-    except Exception:
-        pass
+    """Send en notifikation til lederen/lederne OG gem den i samtalehukommelsen,
+    saa Aura forstaar opfoelgende svar som 'ja det maa han gerne'.
+    UDEN leder-gruppe (chat_id tom): sendes direkte til ALLE ledere (pro-rolle)."""
+    from . import db
+    if chat_id:
+        maal = [chat_id]
+    else:
+        maal = [u["telegram_id"] for u in db.all_users() if u.get("rolle") == "pro"]
+    for m in maal:
+        try:
+            send_message(m, text)
+            db.save_message(m, "assistant", text)
+        except Exception:
+            pass
 
 
 def send_chat_action(chat_id, action: str = "typing"):
