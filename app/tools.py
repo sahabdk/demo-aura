@@ -1316,7 +1316,9 @@ TOOLS = [
                            "Send ét felt 'soegetekst' med ALT brugeren sagde, fx 'christian' eller 'christian ribevej 25'. "
                            "Returnerer 'kunder' (customer_number, navn, adresse, postnr, by), 'entydigt_match' (true "
                            "hvis der klart kun er én rigtig) og 'bedste' (den kunde du så kan bruge direkte). "
-                           "KRITISK: er entydigt_match FALSE, må du ALDRIG selv vælge en kunde — vis mulighederne "
+                           "KRITISK: er entydigt_match TRUE, så brug 'bedste' MED DET SAMME - spørg ALDRIG "
+                           "'mente du X eller Y' når værktøjet allerede har afgjort det. "
+                           "Er entydigt_match FALSE, må du ALDRIG selv vælge en kunde — vis mulighederne "
                            "og spørg brugeren. Brug KUN dette værktøj når opgaven faktisk handler om en kunde i "
                            "registret — aldrig for steder/firmaer i påmindelser (grossist, byggemarked osv.).",
             "parameters": {"type": "object", "properties": {
