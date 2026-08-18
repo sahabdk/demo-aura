@@ -106,11 +106,21 @@ def _send(to_email: str, subject: str, text: str) -> str:
 def _send_resend(to_email: str, subject: str, text: str) -> str:
     """Send via Resend's HTTPS-API (port 443 — virker fra Railway hvor SMTP er blokeret)."""
     frm = os.environ.get("EMAIL_FROM", "onboarding@resend.dev")
+    body = {"from": frm, "to": [to_email], "subject": subject, "text": text}
+    # Kundesvar kan dirigeres til firmaets alm. indbakke (fx vandt-vandt@mail.dk):
+    # dashboardets ✉️-felt (svar_email) vinder, ellers env EMAIL_REPLY_TO.
+    try:
+        from . import db as _db
+        reply_to = (_db.get_meta("svar_email") or os.environ.get("EMAIL_REPLY_TO", "")).strip()
+    except Exception:
+        reply_to = os.environ.get("EMAIL_REPLY_TO", "").strip()
+    if reply_to:
+        body["reply_to"] = reply_to
     r = requests.post(
         "https://api.resend.com/emails",
         headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}",
                  "Content-Type": "application/json"},
-        json={"from": frm, "to": [to_email], "subject": subject, "text": text},
+        json=body,
         timeout=20,
     )
     if not r.ok:

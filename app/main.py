@@ -158,7 +158,7 @@ async def admin_indstilling(secret: str, request: Request):
 _SKABELON_NOEGLER = ("skabelon_rykker1_emne", "skabelon_rykker1_tekst",
                      "skabelon_rykker2_emne", "skabelon_rykker2_tekst",
                      "skabelon_rykker3_emne", "skabelon_rykker3_tekst",
-                     "skabelon_sms_adresse", "betalingsinfo", "leder_email")
+                     "skabelon_sms_adresse", "betalingsinfo", "leder_email", "svar_email")
 
 
 @app.get("/admin/{secret}/skabeloner")
@@ -177,6 +177,7 @@ def admin_skabeloner(secret: str):
                                      "adresse her, så vi har den helt rigtigt: {link}")
     ud["betalingsinfo"] = db.get_meta("betalingsinfo") or PAYMENT_INFO or ""
     ud["leder_email"] = db.get_meta("leder_email") or os.environ.get("LEADER_EMAIL", "")
+    ud["svar_email"] = db.get_meta("svar_email") or os.environ.get("EMAIL_REPLY_TO", "")
     return ud
 
 
