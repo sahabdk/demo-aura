@@ -40,7 +40,23 @@ def now_local():
 
 # --- Referencenummer-portal ---
 # Komma-liste over de store kunders kundenumre (kun disse jagtes for manglende reference)
-REF_CUSTOMERS = [c.strip() for c in os.environ.get("REF_CUSTOMERS", "").split(",") if c.strip()]
+# Format: "90210,90500" ELLER med fast referencemail pr. kunde: "90210;navn@firma.dk,90500"
+# (email efter ';' overstyrer kundekortets mail - udeladt = kundekortet bruges)
+REF_CUSTOMERS = []
+REF_EMAILS = {}
+for _r in os.environ.get("REF_CUSTOMERS", "").split(","):
+    _r = _r.strip()
+    if not _r:
+        continue
+    if ";" in _r:
+        _nr, _mail = _r.split(";", 1)
+        _nr, _mail = _nr.strip(), _mail.strip()
+        if _nr:
+            REF_CUSTOMERS.append(_nr)
+            if "@" in _mail:
+                REF_EMAILS[_nr] = _mail
+    else:
+        REF_CUSTOMERS.append(_r)
 # Offentlig URL til appen (bruges til at bygge portal-links), fx https://aura-production.up.railway.app
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
 # Påmindelse: send igen efter X dage hvis kunden ikke har udfyldt, maks Y mails i alt
