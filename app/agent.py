@@ -223,11 +223,18 @@ gamle sags-/kundenumre — slå op igen.
 """
 
 
-def run_agent(ctx: dict, user_message: str, raw_text: str = None, max_steps: int = 6) -> str:
+def run_agent(ctx: dict, user_message: str, raw_text: str = None, max_steps: int = 6,
+              talt: bool = False) -> str:
     """ctx: {telegram_id, navn, rolle}. Returnerer Auras tekstsvar."""
     today = now_local()
     header = (f"Lige nu (dansk tid): {today:%Y-%m-%d %H:%M} ({today:%A}). "
               f"Bruger: {ctx['navn']} (rolle: {ctx['rolle']}).")
+    if talt:
+        header += ("\nBrugerens besked er en TALT besked, og dit svar bliver læst HØJT: "
+                   "svar som i en naturlig samtale - flydende, korte sætninger, varmt og "
+                   "direkte. INGEN lister, bindestreger eller parenteser. Max 2-3 sætninger "
+                   "medmindre der bedes om mere. Korte svar som 'ja' er bekræftelser på dit "
+                   "seneste spørgsmål - udfør handlingen.")
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT + "\n\n" + header}]
     messages += db.recent_messages(ctx["telegram_id"], limit=8)
