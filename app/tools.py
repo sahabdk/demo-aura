@@ -77,7 +77,11 @@ def soeg_kunde(args, ctx):
     # Så kan Aura vælge direkte uden at spørge (fx bruger gav navn + vej der kun passer på én).
     top = scored[0][0]
     naest = scored[1][0] if len(scored) > 1 else 0
-    entydig = len(scored) == 1 or (top >= 0.9 and top - naest >= 0.1)
+    # Entydig ved klart gab - ELLER når topkandidaten matcher på selve NAVNET (1.0),
+    # og nr. 2 kun naaede op via adresse/by ("Boligselskabet Kolding" vs. et selskab
+    # der blot LIGGER i Kolding). Ordret navn slaar altid adresse-sammenfald.
+    entydig = (len(scored) == 1 or (top >= 0.9 and top - naest >= 0.1)
+               or (top >= 1.0 and naest < 1.0))
     return {"kunder": kunder, "entydigt_match": entydig,
             "bedste": kunder[0] if entydig else None}
 
@@ -347,7 +351,8 @@ def opret_sag(args, ctx):
             return {"resultat": f"Ingen eksisterende kunde matcher '{args['kunde']}' - heller "
                                 "ikke tilnærmelsesvis. Sig det til brugeren, og spørg om det er "
                                 "en HELT ny kunde (opret_kunde).",}
-        if len(staerke) == 1 or staerke[0][0] >= staerke[1][0] + 0.08:
+        if (len(staerke) == 1 or staerke[0][0] >= staerke[1][0] + 0.08
+                or (staerke[0][0] >= 1.0 and staerke[1][0] < 1.0)):
             kn = str(staerke[0][1].get("customer_number"))
         else:
             return {"resultat": "Flere kunder matcher navnet. Spoerg brugeren HVILKEN (kun én gang) "
