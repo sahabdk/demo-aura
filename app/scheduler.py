@@ -6,6 +6,7 @@
 """
 import logging
 import os
+import re
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -206,6 +207,11 @@ def stamdata_tjek():
         if not tlf:
             db.log_handling("", "Aura (stamdata)", "system", "stamdata mangler - ingen tlf",
                             f"kunde {kn} ({d.get('customer_name')}): mangler {','.join(mangler)}")
+            continue
+        # TEST-SIKRING: er STAMDATA_TEST_TLF sat, sendes KUN til praecis det nummer
+        # (beskytter mod testkonti fulde af tilfaeldige numre, der kan tilhoere rigtige folk)
+        test_tlf = os.environ.get("STAMDATA_TEST_TLF", "").strip()
+        if test_tlf and re.sub(r"\D", "", tlf)[-8:] != re.sub(r"\D", "", test_tlf)[-8:]:
             continue
         if db.adr_request_for_kunde(kn):
             continue   # allerede spurgt en gang - aldrig sms-spam
