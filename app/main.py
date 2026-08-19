@@ -240,6 +240,19 @@ def admin_medarbejdere_raa(secret: str):
             "raa": alle}
 
 
+@app.get("/admin/{secret}/stamdatatjek")
+def admin_stamdatatjek(secret: str):
+    """Udloes stamdata-tjekket manuelt (til test). Respekterer kontakten i dashboardet."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    if not db.funktion_til("stamdatatjek") or db.get_meta("funk_stamdatatjek") == "0":
+        return {"resultat": "stamdata-tjekket er slaaet FRA i dashboardet - taend det foerst"}
+    from .scheduler import stamdata_tjek
+    stamdata_tjek()
+    return {"resultat": "koert - se Handlinger-fanen i dashboardet for hvad der skete "
+                        "(stamdata-sms sendt / mangler - ingen tlf / intet at goere)"}
+
+
 @app.get("/admin/{secret}/refscan")
 def admin_refscan(secret: str):
     """Udloes reference-scanningen manuelt (til test) og vis diagnostikken."""
@@ -597,11 +610,9 @@ async def telegram_webhook(secret: str, request: Request):
                         f"kort i stedet for at oprette noget.) {text}")
 
     ctx = {"telegram_id": from_id, "navn": user["navn"], "rolle": user["rolle"]}
-    if var_tale:
-        text = ("(TALT besked - dit svar bliver læst HØJT. Svar som i en naturlig samtale: "
-                "flydende, korte sætninger, varmt og direkte. INGEN lister, bindestreger, "
-                "parenteser eller opremsninger - væv det ind i almindelige sætninger. "
-                "Max 2-3 sætninger medmindre der bedes om mere.) " + text)
+    # VIGTIGT: tale-instruktionen lægges i SYSTEM-headeren (talt=True) - ALDRIG foran
+    # brugerens ord. Et kort talt "ja" skal stå nøgent, ellers drukner det i indpakning
+    # og modellen overser bekræftelsen (kendt fejl: gentog spørgsmålet ved talt ja).
     # Hold "skriver…"/"optager…" kørende indtil svaret er klar (Telegram viser kun ~5 sek ad gangen)
     _stop_typing = threading.Event()
 
@@ -611,7 +622,7 @@ async def telegram_webhook(secret: str, request: Request):
 
     threading.Thread(target=_puls, daemon=True).start()
     try:
-        svar = run_agent(ctx, text, raa_tekst)
+        svar = run_agent(ctx, text, raa_tekst, talt=var_tale)
     except Exception as e:
         log.exception("agent-fejl")
         svar = "Der opstod en fejl. Prøv igen om lidt."
