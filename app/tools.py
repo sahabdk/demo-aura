@@ -1607,11 +1607,11 @@ def call_tool(name: str, args: dict, ctx: dict):
                 try:
                     from .config import LEADER_GROUP_CHAT_ID
                     from . import telegram as _tg
-                    if LEADER_GROUP_CHAT_ID:
-                        _tg.send_leader(LEADER_GROUP_CHAT_ID,
-                                         f"🛑 Aura har sat sig selv på pause: {ctx.get('navn')} har lavet "
-                                         f"{n} ændringer på 1 time (grænse {MAX_PR_TIME}). Tjek handlingsloggen "
-                                         "og skriv 'aura start' for at fortsætte.")
+                    # tom gruppe = send_leader gaar direkte til alle ledere (pro)
+                    _tg.send_leader(LEADER_GROUP_CHAT_ID,
+                                     f"🛑 Aura har sat sig selv på pause: {ctx.get('navn')} har lavet "
+                                     f"{n} ændringer på 1 time (grænse {MAX_PR_TIME}). Tjek handlingsloggen "
+                                     "og skriv 'aura start' for at fortsætte.")
                 except Exception:
                     pass
                 return {"resultat": "Jeg har sat mig selv på pause som sikkerhed: der er lavet usædvanligt "

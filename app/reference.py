@@ -275,7 +275,8 @@ def _notify_leder(rec, reference):
     except Exception:
         navn = rec["customer_number"]
     try:
-        telegram.send_message(
+        # tom gruppe = send_leader gaar direkte til alle ledere (pro)
+        telegram.send_leader(
             config.LEADER_GROUP_CHAT_ID,
             f"✅ Referencenummer modtaget: sag {rec['case_number']} → {reference} (fra {navn})")
     except Exception:
