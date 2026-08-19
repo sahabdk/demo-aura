@@ -214,7 +214,10 @@ def stamdata_tjek():
         if test_tlf and re.sub(r"\D", "", tlf)[-8:] != re.sub(r"\D", "", test_tlf)[-8:]:
             continue
         if db.adr_request_for_kunde(kn):
-            continue   # allerede spurgt en gang - aldrig sms-spam
+            db.log_handling("", "Aura (stamdata)", "system", "stamdata springes over",
+                            f"kunde {kn} ({d.get('customer_name')}): allerede spurgt en gang "
+                            f"- nulstil evt. via /admin/.../adr-nulstil/{kn}")
+            continue   # aldrig sms-spam
         token = _secrets.token_urlsafe(16)
         db.create_adr_request(token, tlf, d.get("customer_name") or "",
                               kundenummer=kn, felter=",".join(mangler))
