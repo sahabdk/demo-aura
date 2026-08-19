@@ -372,6 +372,19 @@ def create_adr_request(token, telefon, navn="", kundenummer="", felter=""):
                   (token, str(telefon or ""), navn or "", str(kundenummer or ""), felter or ""))
 
 
+def slet_adr_request(token):
+    """Fjern en anmodning igen (fx hvis SMS'en ikke reelt blev sendt),
+    saa kunden ikke staar som 'allerede spurgt' uden at have faaet noget."""
+    with conn() as c:
+        c.execute("DELETE FROM adr_anmodninger WHERE token=? AND status!='done'", (token,))
+
+
+def slet_adr_requests_for_kunde(kundenummer):
+    with conn() as c:
+        c.execute("DELETE FROM adr_anmodninger WHERE kundenummer=? AND status!='done'",
+                  (str(kundenummer),))
+
+
 def adr_request_for_kunde(kundenummer):
     """Seneste stamdata-anmodning for en kunde (til dedup: spoerg aldrig to gange)."""
     with conn() as c:

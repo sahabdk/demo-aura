@@ -224,13 +224,21 @@ def stamdata_tjek():
                     "kartotek - udfyld dem venligst her: {link}")
         try:
             ret = retell.send_sms(tlf, tekst.replace("{link}", link))
-            db.log_handling("", "Aura (stamdata)", "system", "stamdata-sms sendt",
-                            f"kunde {kn} ({d.get('customer_name')}): mangler "
-                            f"{','.join(mangler)} -> {tlf} [{ret}]")
-            sendt += 1
+            if ret == "sent":
+                db.log_handling("", "Aura (stamdata)", "system", "stamdata-sms sendt",
+                                f"kunde {kn} ({d.get('customer_name')}): mangler "
+                                f"{','.join(mangler)} -> {tlf}")
+                sendt += 1
+            else:
+                # deaktiveret/dry-run: SMS'en naaede ALDRIG kunden -> fjern anmodningen
+                # igen, saa kunden ikke blokeres af 'allerede spurgt'-reglen
+                db.slet_adr_request(token)
+                db.log_handling("", "Aura (stamdata)", "system", "stamdata-sms IKKE sendt",
+                                f"kunde {kn}: [{ret}] - prøves igen når SMS er tændt")
         except Exception as e:
+            db.slet_adr_request(token)
             db.log_handling("", "Aura (stamdata)", "system", "stamdata-sms fejl",
-                            f"kunde {kn}: {str(e)[:120]}")
+                            f"kunde {kn}: {str(e)[:120]} - prøves igen næste kørsel")
         if sendt >= 10:   # loft pr. koersel - ro paa
             break
 

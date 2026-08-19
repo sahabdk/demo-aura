@@ -240,6 +240,17 @@ def admin_medarbejdere_raa(secret: str):
             "raa": alle}
 
 
+@app.get("/admin/{secret}/adr-nulstil/{kundenummer}")
+def admin_adr_nulstil(secret: str, kundenummer: str):
+    """Nulstil en kundes stamdata-anmodning (fx efter fejlslagen test), saa de kan spoerges igen."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    db.slet_adr_requests_for_kunde(kundenummer)
+    db.log_handling("", "Pilly-dashboard", "system", "stamdata-anmodning nulstillet",
+                    f"kunde {kundenummer}")
+    return {"resultat": f"kunde {kundenummer} kan nu spørges igen"}
+
+
 @app.get("/admin/{secret}/stamdatatjek")
 def admin_stamdatatjek(secret: str):
     """Udloes stamdata-tjekket manuelt (til test). Respekterer kontakten i dashboardet."""
