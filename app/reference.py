@@ -69,14 +69,6 @@ def scan_and_notify():
         # faktureringsmail, ellers alm. kundemail (samme prioritering som rykkere)
         email = config.REF_EMAILS.get(str(cn)) or os_api.faktura_email(debtor) or ""
         navn = debtor.get("customer_name") or "kunde"
-        adresse = (f"{debtor.get('customer_address','')} {debtor.get('customer_postalcode','')} "
-                   f"{debtor.get('customer_city','')}").strip()
-        # Firmakunder har ofte MANGE arbejdssteder: brug sagens leveringsadresse i mailen,
-        # saa kunden kan se HVOR arbejdet blev udfoert (fallback: kundens egen adresse).
-        try:
-            leverings = os_api.delivery_addresses(cn)
-        except Exception:
-            leverings = []
         s["email"] = bool(email)
         s["sager"] = len(cases)
 
@@ -98,17 +90,9 @@ def scan_and_notify():
             if not email:
                 continue
 
-            sag_adresse = adresse
-            da_id = case.get("delivery_address")
-            if da_id:
-                for da in leverings:
-                    if str(da.get("id")) == str(da_id):
-                        a = (f"{da.get('address') or ''} {da.get('postalcode') or ''} "
-                             f"{da.get('city') or ''}").strip()
-                        if a:
-                            sag_adresse = a
-                        break
-            sag_tekst = f"Sag {nr}: {case.get('description') or 'opgave'} – {sag_adresse}".strip(" –")
+            # Kun ordrenummer + ordrebeskrivelse i mailen - arbejdsstedet staar
+            # allerede i beskrivelsen (firmaets praksis), saa ingen separat adresse.
+            sag_tekst = f"Sag {nr}: {case.get('description') or 'opgave'}"
             if not rec:
                 token = secrets.token_urlsafe(16)
                 db.create_ref_request(token, nr, cn)
@@ -187,9 +171,8 @@ def portal_page(token: str) -> str:
         return _page(f"<h1 class='ok'>Tak!</h1><p>Vi har allerede modtaget referencenummeret "
                      f"<b>{html.escape(ref)}</b> for denne opgave — du behøver ikke gøre mere.</p>")
 
-    debtor = os_api.get_debtor(rec["customer_number"]) or {}
-    adresse = (f"{debtor.get('customer_address','')} {debtor.get('customer_postalcode','')} "
-               f"{debtor.get('customer_city','')}").strip()
+    # KUN ordrenummer + ordrebeskrivelse (+ dato) - adressen vises IKKE:
+    # firmaets praksis er, at arbejdsstedet allerede staar i beskrivelsen.
     besk = (case.get("description") or "").strip() or "—"
     dato = ""
     try:
@@ -199,8 +182,6 @@ def portal_page(token: str) -> str:
     except (ValueError, TypeError, OSError):
         dato = ""
     raekker = [("Sag", rec["case_number"]), ("Opgave / projekt", besk)]
-    if adresse:
-        raekker.append(("Adresse", adresse))
     if dato:
         raekker.append(("Dato", dato))
     sag = "".join(f"<div><span class='etiket'>{html.escape(k)}:</span>{html.escape(str(v))}</div>"
