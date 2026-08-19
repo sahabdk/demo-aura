@@ -239,6 +239,12 @@ def run_agent(ctx: dict, user_message: str, raw_text: str = None, max_steps: int
     # Lavt reasoning-niveau = hurtigere svar (kun understøttet af gpt-5/o-modeller)
     if OPENAI_MODEL.startswith(("gpt-5", "o1", "o3", "o4")):
         kwargs["reasoning_effort"] = OPENAI_REASONING
+    # Prioritets-koeen hos OpenAI: samme model og kvalitet, bare hurtigere svar
+    # (koster ca. dobbelt tokenpris). Taendes med OPENAI_SERVICE_TIER=priority i Railway.
+    import os as _os
+    tier = _os.environ.get("OPENAI_SERVICE_TIER", "").strip()
+    if tier:
+        kwargs["service_tier"] = tier
 
     udfoert = set()   # (vaerktoej, argumenter) der allerede er koert i DETTE svar
     for _ in range(max_steps):
