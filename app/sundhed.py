@@ -47,7 +47,12 @@ def alle_tjek():
         doms = (r.json() or {}).get("data") or []
         verificerede = [d.get("name") for d in doms if d.get("status") == "verified"]
         afsender = os.environ.get("EMAIL_FROM", "onboarding@resend.dev")
-        domaene = afsender.split("@")[-1].lower()
+        # EMAIL_FROM kan have formatet 'Vandt & Vandt ApS <adresse@domæne.dk>'
+        # - domænet skal læses INDE fra vinkelparenteserne
+        import re as _re
+        m = _re.search(r"<([^>]+)>", afsender)
+        adresse_del = m.group(1) if m else afsender
+        domaene = adresse_del.split("@")[-1].strip().lower()
         if domaene == "resend.dev":
             raise RuntimeError("EMAIL_FROM er ikke sat - mails kommer fra onboarding@resend.dev "
                                "(kun test, ryger ofte i spam)")
