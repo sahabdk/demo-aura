@@ -319,15 +319,16 @@ def _set_kontakt_levering(sagsnummer, customer_number, args):
 
 
 def _med_adresse(beskrivelse, adresse):
-    """Firmaets praksis: arbejdsstedets adresse staar FORREST i beskrivelsen.
-    Saetter den kun ind, hvis den ikke allerede er naevnt."""
+    """Firmaets praksis: 'ADRESSE, Beskrivelse: OPGAVE' - adressen forrest,
+    opgaven efter 'Beskrivelse:'-etiketten. Adressen indsaettes kun hvis
+    den ikke allerede er naevnt."""
     b = (beskrivelse or "").strip()
-    a = (adresse or "").strip().rstrip(".")
+    a = (adresse or "").strip().rstrip(".,")
     if not a:
         return b
     if _norm(a) in _norm(b):
         return b
-    return f"{a}. {b}" if b else a
+    return f"{a}, Beskrivelse: {b}" if b else a
 
 
 def opret_sag(args, ctx):

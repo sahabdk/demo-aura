@@ -212,6 +212,9 @@ def stamdata_tjek():
         # (beskytter mod testkonti fulde af tilfaeldige numre, der kan tilhoere rigtige folk)
         test_tlf = os.environ.get("STAMDATA_TEST_TLF", "").strip()
         if test_tlf and re.sub(r"\D", "", tlf)[-8:] != re.sub(r"\D", "", test_tlf)[-8:]:
+            db.log_handling("", "Aura (stamdata)", "system", "stamdata springes over (test-sikring)",
+                            f"kunde {kn} ({d.get('customer_name')}): tlf {tlf} matcher ikke "
+                            f"STAMDATA_TEST_TLF")
             continue
         if db.adr_request_for_kunde(kn):
             db.log_handling("", "Aura (stamdata)", "system", "stamdata springes over",
