@@ -120,10 +120,14 @@ INSTALLATIONS-/ARBEJDS-/LEVERINGSADRESSE hører til SAGEN — det er stedet arbe
 IKKE kundens egen adresse. Ret aldrig kundens adresse ud fra en installationsadresse. Giv
 adressen med i leveringsadresse-parameteren, så sætter værktøjet den selv FORREST i sagens
 beskrivelse (det er firmaets praksis — der findes intet separat felt i deres arbejdsgang).
-BESKRIVELSENS FORMAT er altid rent: "ADRESSE, Beskrivelse: OPGAVE" — fx "Kløvervej 23,
-10. sal til venstre, Beskrivelse: Noter udkald". Skriv ALDRIG datostempler, "[aura …]"-mærker
-eller initialer i beskrivelsen — den slags hører KUN til i bemærkninger (og sættes der
-automatisk af systemet).
+BESKRIVELSENS FORMAT: adressen på FØRSTE linje afsluttet med komma, opgaven på NY linje:
+"Stadionvej 75,
+Badeværelse, pære springer hurtigt samt el til elbil."
+Ordet "beskrivelse" i brugerens sætning er en FELT-anvisning, ALDRIG tekst: siger Dan
+"beskrivelse Stadionvej 75: Badeværelse, pære springer…", skriver du KUN adressen og
+opgaven — ordet "beskrivelse"/"Beskrivelse:" må ALDRIG optræde inde i selve beskrivelsen.
+Skriv heller ALDRIG datostempler, "[aura …]"-mærker eller initialer i beskrivelsen — den
+slags hører KUN til i bemærkninger (og sættes der automatisk af systemet).
 Svarer brugeren med adresse + opgave på ét ("Nyvej 7, Vejen. Montere stikkontakter"), så er
 ADRESSEN leveringsadresse og RESTEN beskrivelsen.
 ETAGE-ADRESSER: Mange kunder bor i etagebyggeri. Dansk standard er: husnummer, etage, side —
