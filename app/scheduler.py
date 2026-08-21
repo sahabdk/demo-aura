@@ -169,10 +169,11 @@ def status_vagt():
 
 
 def stamdata_tjek():
-    """LUKKEDE sager: mangler kunden FAKTURA-EMAIL paa kundekortet (Fakturakontakt),
-    faar de en SMS med et personligt link - svaret skrives direkte i faktura-emailfeltet.
-    KUN faktura-emailen tjekkes (hverken kunde-email eller adresse - firmaets oenske).
-    Hver kunde spoerges hoejst EN gang."""
+    """LUKKEDE + IGANGVÆRENDE sager: mangler kunden FAKTURA-EMAIL paa kundekortet
+    (Fakturakontakt), faar de en SMS med et personligt link - svaret skrives direkte
+    i faktura-emailfeltet. Lukkede: sms straks. Igangvaerende: foerst efter 3 dages
+    karens (STAMDATA_IGANG_DAGE). KUN faktura-emailen tjekkes (hverken kunde-email
+    eller adresse). Hver kunde spoerges hoejst EN gang."""
     if not db.funktion_til("stamdatatjek"):
         return
     import secrets as _secrets
@@ -187,10 +188,36 @@ def stamdata_tjek():
     except Exception:
         log.exception("stamdata: kunne ikke hente sager")
         return
+    def _er_igang(case):
+        sid = str(case.get("status"))
+        for st in os_api.case_statuses():
+            if str(st.get("id")) == sid:
+                t = (st.get("text") or "").lower()
+                return any(o in t for o in ("igang", "i gang", "påbegynd", "paabegynd"))
+        return False
+
+    KARENS_DAGE = int(os.environ.get("STAMDATA_IGANG_DAGE", "3"))
     set_kunder = set()
     for c in sager:
-        if not os_api.is_closed(c):
-            continue   # KUN lukkede ordrer tjekkes
+        # LUKKEDE sager: sms straks. IGANGVÆRENDE: foerst efter KARENS_DAGE
+        # (regnet fra foerste gang scanningen SAA sagen som igangvaerende).
+        lukket = os_api.is_closed(c)
+        if not lukket:
+            if not _er_igang(c):
+                continue   # aabne og oevrige statusser roeres aldrig
+            nr_sag = c.get("case_number")
+            noegle = f"stamdata_igang_{nr_sag}"
+            foerste = db.get_meta(noegle)
+            if not foerste:
+                db.set_meta(noegle, now_local().strftime("%Y-%m-%d"))
+                continue   # karens starter nu - sms tidligst om KARENS_DAGE dage
+            try:
+                dage = (now_local().date()
+                        - datetime.strptime(foerste, "%Y-%m-%d").date()).days
+            except ValueError:
+                dage = 0
+            if dage < KARENS_DAGE:
+                continue
         kn = str(c.get("customer_number") or "")
         if not kn or kn in set_kunder:
             continue

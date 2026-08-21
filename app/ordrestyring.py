@@ -206,7 +206,8 @@ def add_remark(case_number, tekst, dato_str):
         e = eksisterende.split("]")[-1].strip().lower()   # uden [dato Aura]-præfiks
         if e and (t in e or e in t or _dl.SequenceMatcher(None, t, e).ratio() >= 0.8):
             return {"duplikat": True}
-    ny = f"{gammel} | [{dato_str} Aura] {tekst}".lstrip(" |")
+    # Ingen [dato Aura]-stempel - Dan vil have bemaerkningerne RENE (kun selve teksten)
+    ny = f"{gammel} | {tekst}".lstrip(" |").strip()
     return _data(_req("PUT", f"/cases/{case_number}", json={"remarks": ny}))
 
 
