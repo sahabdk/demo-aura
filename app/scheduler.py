@@ -169,9 +169,10 @@ def status_vagt():
 
 
 def stamdata_tjek():
-    """LUKKEDE sager: mangler kunden email/adresse/postnr/by paa kundekortet, faar de
-    en SMS med et personligt link, hvor de udfylder KUN det manglende - svaret
-    synkroniseres direkte ind i ordrestyring. Hver kunde spoerges hoejst EN gang."""
+    """LUKKEDE sager: mangler kunden FAKTURA-EMAIL paa kundekortet (Fakturakontakt),
+    faar de en SMS med et personligt link - svaret skrives direkte i faktura-emailfeltet.
+    KUN faktura-emailen tjekkes (hverken kunde-email eller adresse - firmaets oenske).
+    Hver kunde spoerges hoejst EN gang."""
     if not db.funktion_til("stamdatatjek"):
         return
     import secrets as _secrets
@@ -198,11 +199,15 @@ def stamdata_tjek():
             d = os_api.get_debtor(kn) or {}
         except Exception:
             continue
-        mangler = [f for f, felt in (("email", "customer_email"), ("adresse", "customer_address"),
-                                     ("postnr", "customer_postalcode"), ("by", "customer_city"))
-                   if not str(d.get(felt) or "").strip()]
-        if not mangler:
+        # KUN faktura-emailen tjekkes (Fakturakontakt-feltet) - intet andet
+        fak_felt = os_api.faktura_email_felt(d)
+        if not fak_felt:
+            db.log_handling("", "Aura (stamdata)", "system", "stamdata: faktura-emailfelt ukendt",
+                            f"kunde {kn}: API'et viser intet faktura-emailfelt - springes over")
             continue
+        if str(d.get(fak_felt) or "").strip():
+            continue   # faktura-email findes allerede
+        mangler = ["email"]
         tlf = (d.get("customer_mobile") or d.get("customer_telephone") or "").strip()
         if not tlf:
             db.log_handling("", "Aura (stamdata)", "system", "stamdata mangler - ingen tlf",
@@ -226,8 +231,8 @@ def stamdata_tjek():
                               kundenummer=kn, felter=",".join(mangler))
         link = f"{app_url}/adr/{token}"
         tekst = (db.get_meta("skabelon_sms_stamdata")
-                 or f"Tak fordi du valgte {firma}. Vi mangler et par oplysninger i vores "
-                    "kartotek - udfyld dem venligst her: {link}")
+                 or f"Tak fordi du valgte {firma}. Vi mangler en emailadresse til "
+                    "fakturering - udfyld den venligst her: {link}")
         try:
             ret = retell.send_sms(tlf, tekst.replace("{link}", link))
             if ret == "sent":

@@ -386,6 +386,25 @@ def assign_case(case_number, technician_id):
     return _data(_req("PUT", f"/cases/{case_number}", json={"main_technician": int(technician_id)}))
 
 
+def faktura_email_felt(debtor):
+    """API-noeglen for FAKTURA-emailfeltet paa kundekortet (fx invoice_email).
+    Findes generisk, da navnet varierer. None hvis feltet slet ikke er i API'et."""
+    for k in (debtor or {}).keys():
+        kl = str(k).lower()
+        if ("invoice" in kl or "faktura" in kl) and "mail" in kl:
+            return k
+    return None
+
+
+def saet_faktura_email(customer_number, email):
+    """Skriv KUN faktura-emailen paa kundekortet (roerer ikke kunde-emailen)."""
+    cur = get_debtor(customer_number) or {}
+    felt = faktura_email_felt(cur)
+    if not felt:
+        raise RuntimeError("faktura-emailfeltet findes ikke i API'et for denne kunde")
+    return update_debtor(customer_number, **{felt: email})
+
+
 def faktura_email(debtor):
     """Mail til fakturapost (rykkere, referenceanmodninger): FAKTURERINGS-mailen
     fra kundekortet har 1. prioritet, ellers kundens almindelige email."""

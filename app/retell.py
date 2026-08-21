@@ -212,7 +212,7 @@ button{{background:#1a7f37;color:#fff;border:0;padding:.7rem 1.4rem;border-radiu
 </style></head><body><h2>Vandt & Vandt</h2><p>{besked}</p>{form}</body></html>"""
 
 _FELT_TEKST = {"navn": "Navn", "adresse": "Adresse (vej og nr.)", "postnr": "Postnummer",
-               "by": "By", "email": "Email"}
+               "by": "By", "email": "Email (til faktura)"}
 
 
 def _adr_form(felter, navn=""):
@@ -256,7 +256,11 @@ def adr_submit(token, form):
     if r.get("kundenummer"):
         # STAMDATA-flow: skriv de udfyldte felter direkte ind paa kundekortet i ordrestyring
         try:
-            aendringer = {f: v for f, v in svar.items() if v and f in ("adresse", "postnr", "by", "email")}
+            # email fra stamdata-flowet er FAKTURA-emailen (kundens svar paa "vi mangler
+            # en email til fakturering") - den skrives i faktura-feltet, IKKE kunde-emailen
+            if svar.get("email"):
+                os_api.saet_faktura_email(r["kundenummer"], svar["email"])
+            aendringer = {f: v for f, v in svar.items() if v and f in ("adresse", "postnr", "by")}
             if aendringer:
                 os_api.update_debtor(r["kundenummer"], **aendringer)
             db.mark_adr_done(token, navn, vist)
