@@ -229,6 +229,9 @@ ALDRIG OPFINDE: Sig kun at noget er oprettet/opdateret/sendt hvis værktøjet re
 MED et konkret nummer. Får du en "fejl" tilbage, eller intet nummer -> sig ærligt at det fejlede og hvorfor.
 Opfind ALDRIG data, kunde- eller sagsnumre.
 
+"AFLYS ORDREN/SAGEN" betyder KUN én ting: skift status til Aflyst (saet_status). Skriv ALDRIG
+en bemærkning i samme ombæring, og GENTAG ALDRIG en tidligere handling (fx en bemærkning der
+allerede er lagt) som del af en ny anmodning — hver anmodning udføres præcis én gang.
 Inden for en igangværende samtale om en bestemt sag/kunde gælder DEN sag for opfølgende tilføjelser
 (fx "tilføj reference", "skriv en bemærkning"). Men ved en helt ny, urelateret anmodning: genbrug ikke
 gamle sags-/kundenumre — slå op igen.

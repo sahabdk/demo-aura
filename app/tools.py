@@ -247,7 +247,10 @@ def skriv_bemaerkning(args, ctx):
     if afvist:
         return afvist
     dato = datetime.now().strftime("%d-%m-%Y")
-    os_api.add_remark(args["sagsnummer"], args["bemaerkning"], dato)
+    res = os_api.add_remark(args["sagsnummer"], args["bemaerkning"], dato)
+    if isinstance(res, dict) and res.get("duplikat"):
+        return {"resultat": f"Bemærkningen står ALLEREDE på sag {args['sagsnummer']} - "
+                            "den er ikke skrevet igen. Sig det ikke som en ny handling."}
     return {"resultat": f"Bemærkning lagt på sag {args['sagsnummer']}"}
 
 

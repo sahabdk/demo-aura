@@ -195,9 +195,17 @@ def saet_rekvirent(case_number, navn):
 
 
 def add_remark(case_number, tekst, dato_str):
-    """Tilføjer en bemærkning og bevarer historikken."""
+    """Tilføjer en bemærkning og bevarer historikken.
+    DUBLET-VÆRN: (næsten) samme tekst skrives aldrig to gange - talegenkendelsen
+    laver småvarianter (Kent/Kenneth), og gentagne kald må ikke fylde feltet op."""
+    import difflib as _dl
     cur = get_case(case_number)
     gammel = (cur.get("remarks") or "").replace("\n", " | ")
+    t = str(tekst or "").strip().lower()
+    for eksisterende in gammel.split("|"):
+        e = eksisterende.split("]")[-1].strip().lower()   # uden [dato Aura]-præfiks
+        if e and (t in e or e in t or _dl.SequenceMatcher(None, t, e).ratio() >= 0.8):
+            return {"duplikat": True}
     ny = f"{gammel} | [{dato_str} Aura] {tekst}".lstrip(" |")
     return _data(_req("PUT", f"/cases/{case_number}", json={"remarks": ny}))
 
