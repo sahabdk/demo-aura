@@ -226,6 +226,10 @@ def stamdata_tjek():
             d = os_api.get_debtor(kn) or {}
         except Exception:
             continue
+        # EAN/GLN-kunder faktureres ELEKTRONISK - de skal aldrig spoerges om faktura-email
+        if any(("ean" in str(k).lower() or "gln" in str(k).lower()) and str(v or "").strip()
+               for k, v in d.items()):
+            continue
         # KUN faktura-emailen tjekkes (Fakturakontakt-feltet) - intet andet
         fak_felt = os_api.faktura_email_felt(d)
         if not fak_felt:
