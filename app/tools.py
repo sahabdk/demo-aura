@@ -4,6 +4,7 @@ Hvert værktøj angiver hvilke roller der må bruge det. 'pro' = leder, 'jun' = 
 Funktionerne kaldes med (args: dict, ctx: dict) hvor ctx har 'telegram_id', 'navn', 'rolle'.
 """
 import difflib
+import re
 from datetime import datetime, timedelta
 from . import ordrestyring as os_api
 from . import os_graphql as os_gql
@@ -247,7 +248,10 @@ def skriv_bemaerkning(args, ctx):
     if afvist:
         return afvist
     dato = datetime.now().strftime("%d-%m-%Y")
-    res = os_api.add_remark(args["sagsnummer"], args["bemaerkning"], dato)
+    # HAARDT VAERN: bemaerkninger skal vaere RENE - klip ethvert "[dato Aura]"-agtigt
+    # praefiks af, ogsaa hvis modellen selv har sat det paa (efterligning af gamle noter)
+    tekst = re.sub(r"^\s*\[[^\]]{0,40}\]\s*", "", str(args["bemaerkning"] or "")).strip()
+    res = os_api.add_remark(args["sagsnummer"], tekst, dato)
     if isinstance(res, dict) and res.get("duplikat"):
         return {"resultat": f"Bemærkningen står ALLEREDE på sag {args['sagsnummer']} - "
                             "den er ikke skrevet igen. Sig det ikke som en ny handling."}

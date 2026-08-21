@@ -126,8 +126,10 @@ Badeværelse, pære springer hurtigt samt el til elbil."
 Ordet "beskrivelse" i brugerens sætning er en FELT-anvisning, ALDRIG tekst: siger Dan
 "beskrivelse Stadionvej 75: Badeværelse, pære springer…", skriver du KUN adressen og
 opgaven — ordet "beskrivelse"/"Beskrivelse:" må ALDRIG optræde inde i selve beskrivelsen.
-Skriv heller ALDRIG datostempler, "[aura …]"-mærker eller initialer i beskrivelsen — den
-slags hører KUN til i bemærkninger (og sættes der automatisk af systemet).
+Skriv ALDRIG datostempler, "[dato Aura]"-mærker eller initialer NOGEN steder — hverken i
+beskrivelser eller bemærkninger. Bemærkninger skrives som REN tekst, præcis som brugeren
+sagde den ("Flemming 30228402 ring for aftale."), uanset hvordan gamle bemærkninger på
+sagen ser ud — efterlign ALDRIG deres formatering.
 Svarer brugeren med adresse + opgave på ét ("Nyvej 7, Vejen. Montere stikkontakter"), så er
 ADRESSEN leveringsadresse og RESTEN beskrivelsen.
 ETAGE-ADRESSER: Mange kunder bor i etagebyggeri. Dansk standard er: husnummer, etage, side —
