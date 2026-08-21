@@ -350,7 +350,10 @@ def opret_sag(args, ctx):
             return {"resultat": "Ingen sikker match - men der er nærliggende kandidater "
                                 "(navnet kan være hørt forkert). Spørg brugeren kort om det er "
                                 "en af dem (vis navn + adresse). Foreslå ALDRIG at oprette en ny "
-                                "kunde, før brugeren har afvist kandidaterne.",
+                                "kunde, før brugeren har afvist kandidaterne. KRITISK: brugerens "
+                                "SVAR er et valg mellem PRÆCIS disse kandidater - match svaret mod "
+                                "deres navne og kald opret_sag med den valgtes customer_number. "
+                                "Søg ALDRIG forfra på svarets ordlyd, og vis ALDRIG nye kandidater.",
                     "kandidater": [{"customer_number": d.get("customer_number"),
                                     "navn": d.get("customer_name"),
                                     "adresse": f"{d.get('customer_address') or ''}, "
@@ -364,8 +367,11 @@ def opret_sag(args, ctx):
                 or (staerke[0][0] >= 1.0 and staerke[1][0] < 1.0)):
             kn = str(staerke[0][1].get("customer_number"))
         else:
-            return {"resultat": "Flere kunder matcher navnet. Spoerg brugeren HVILKEN (kun én gang) "
-                                "og kald derefter opret_sag igen med customer_number sat direkte.",
+            return {"resultat": "Flere kunder matcher navnet. Spoerg brugeren HVILKEN (kun én gang). "
+                                "KRITISK: brugerens svar er et valg mellem PRÆCIS disse kandidater - "
+                                "match svaret mod deres navne (også ved skæv udtale: 'Alfa Bro' = "
+                                "ALFABO) og kald opret_sag med den valgtes customer_number direkte. "
+                                "Søg ALDRIG forfra på svarets ordlyd, og vis ALDRIG nye kandidater.",
                     "kandidater": [{"customer_number": d.get("customer_number"),
                                     "navn": d.get("customer_name"),
                                     "adresse": f"{d.get('customer_address') or ''}, "

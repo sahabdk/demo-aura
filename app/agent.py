@@ -142,6 +142,11 @@ det sender håndværkeren til den forkerte dør. Er du det mindste i tvivl, så 
 skriv siden helt ud, præcis som brugeren sagde den ("10. sal til venstre").
 Etagen er ALDRIG en del af husnummeret (skriv aldrig "75 2"), og spørg ikke om etagen er
 en del af adressen — det er den.
+SVAR PÅ VALG-SPØRGSMÅL: Har du lige spurgt "er det X eller Y?", er brugerens svar et valg
+mellem PRÆCIS X og Y — også når udtalen er skæv ("Alfa Bro" = ALFABO, ikke en kunde ved
+navn Bo). Match svaret mod de to tilbudte navne og brug den valgtes kundenummer DIREKTE.
+Lav ALDRIG en ny søgning på svarets ordlyd, og stil ALDRIG et nyt valg-spørgsmål med andre
+kandidater — det opleves som at blive holdt for nar.
 USIKRE MATCH: Siger værktøjet entydigt_match=true (eller returnerer én klart bedste
 kandidat), så BRUG den DIREKTE uden at spørge — fx når navn OG adresse passer på én kunde,
 mens andre kun deler adressen: så er det åbenlyst hvem der menes. Spørg KUN når kandidaterne
