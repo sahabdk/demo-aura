@@ -338,6 +338,38 @@ async def admin_test_email(secret: str, request: Request):
                     "Mail afsendt - tjek indbakken (og spam-mappen)."}
 
 
+# ---------- GatewayAPI leverings-kvitteringer (DLR) ----------
+
+@app.post("/gatewayapi/{secret}/dlr")
+async def gatewayapi_dlr(secret: str, request: Request):
+    """GatewayAPI melder leveringsstatus pr. SMS. Fejler leveringen (forkert nummer,
+    spaerret osv.), faar lederne besked i Telegram + det lander i Fejl-fanen."""
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    d = await request.json()
+    mid = d.get("id")
+    status = str(d.get("status") or "").upper()
+    ctx = db.get_meta(f"sms_ctx_{mid}") or f"SMS (besked-id {mid})"
+    FEJL = {"UNDELIVERABLE", "REJECTED", "EXPIRED", "DELETED", "SKIPPED"}
+    if status in FEJL:
+        aarsag = {"UNDELIVERABLE": "kunne ikke leveres - nummeret er muligvis forkert eller kan ikke modtage SMS",
+                  "REJECTED": "afvist af operatøren/GatewayAPI",
+                  "EXPIRED": "udløb uden at kunne leveres (telefonen slukket for længe?)",
+                  "DELETED": "annulleret hos operatøren",
+                  "SKIPPED": "sprunget over af GatewayAPI"}.get(status, status)
+        db.log_handling("", "GatewayAPI", "system", "sms-leveringsfejl",
+                        f"{ctx}: {status} - {aarsag}")
+        try:
+            telegram.send_leader(LEADER_GROUP_CHAT_ID,
+                                 f"⚠️ SMS ikke leveret: {ctx}\nStatus: {status} ({aarsag}). "
+                                 "Tjek telefonnummeret på kundekortet.")
+        except Exception:
+            pass
+    elif status == "DELIVERED":
+        db.log_handling("", "GatewayAPI", "system", "sms leveret", ctx)
+    return {"ok": True}
+
+
 # ---------- Retell-telefonagent + adresse-portal ----------
 
 @app.post("/retell/{secret}/inbound")

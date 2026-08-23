@@ -265,7 +265,9 @@ def stamdata_tjek():
                  or f"Tak fordi du valgte {firma}. Vi mangler en emailadresse til "
                     "fakturering - udfyld den venligst her: {link}")
         try:
-            ret = retell.send_sms(tlf, tekst.replace("{link}", link))
+            ret = retell.send_sms(tlf, tekst.replace("{link}", link),
+                                  kontekst=f"faktura-email-SMS til {d.get('customer_name') or 'kunde'} "
+                                           f"(kunde {kn}, tlf {tlf})")
             if ret == "sent":
                 db.log_handling("", "Aura (stamdata)", "system", "stamdata-sms sendt",
                                 f"kunde {kn} ({d.get('customer_name')}): mangler "

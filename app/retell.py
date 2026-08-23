@@ -77,8 +77,10 @@ def inbound_vars(fra_nummer):
             "by": k.get("customer_city") or ""}
 
 
-def send_sms(til, tekst):
-    """SMS via GatewayAPI (token som brugernavn i basic auth). Uden token: dry-run i loggen."""
+def send_sms(til, tekst, kontekst=""):
+    """SMS via GatewayAPI (token som brugernavn i basic auth). Uden token: dry-run i loggen.
+    Beder om leverings-kvittering (DLR): fejler leveringen senere (forkert nummer osv.),
+    faar lederne besked i Telegram via /gatewayapi-webhooken."""
     if not db.funktion_til("sms"):
         print(f"[sms/deaktiveret] -> {til}: {tekst}", flush=True)
         return "deaktiveret"
@@ -91,13 +93,21 @@ def send_sms(til, tekst):
     msisdn = _norm_tlf(til)
     if len(msisdn) == 8:
         msisdn = "45" + msisdn
+    payload = {"sender": SMS_SENDER, "message": tekst,
+               "recipients": [{"msisdn": int(msisdn)}]}
+    from .config import WEBHOOK_SECRET
+    if APP_BASE_URL and WEBHOOK_SECRET:
+        payload["callback_url"] = f"{APP_BASE_URL.rstrip('/')}/gatewayapi/{WEBHOOK_SECRET}/dlr"
     r = requests.post("https://gatewayapi.com/rest/mtsms",
-                      auth=(GATEWAYAPI_TOKEN, ""),
-                      json={"sender": SMS_SENDER, "message": tekst,
-                            "recipients": [{"msisdn": int(msisdn)}]},
-                      timeout=20)
+                      auth=(GATEWAYAPI_TOKEN, ""), json=payload, timeout=20)
     if not r.ok:
         raise RuntimeError(f"GatewayAPI {r.status_code}: {r.text[:200]}")
+    # Gem kontekst pr. besked-id, saa leveringsfejl kan forklares i Telegram
+    try:
+        for mid in (r.json() or {}).get("ids") or []:
+            db.set_meta(f"sms_ctx_{mid}", kontekst or f"SMS til {til}")
+    except Exception:
+        pass
     return "sent"
 
 
