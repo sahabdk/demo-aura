@@ -39,7 +39,10 @@ def fuzzy_find_customers(query, limit=8, with_scores=False):
                       if ch.isdigit())
         hay = f"{name} {addr} {city} {tlf}"
         matched = sum(1 for t in tokens if t in hay)
-        if q in name or q in addr or q in city:
+        if q == name:
+            score = 1.05   # ORDRET fulde navn ("alfabo" = ALFABO) slaar alt andet,
+                           # ogsaa navne hvor ordet blot indgaar (BO-VEST - Alfabo)
+        elif q in name or q in addr or q in city:
             score = 1.0
         elif tokens and matched == len(tokens):
             score = 0.97         # ALLE søgeord findes (fx navn + vej) -> stærkeste match
@@ -82,7 +85,8 @@ def soeg_kunde(args, ctx):
     # og nr. 2 kun naaede op via adresse/by ("Boligselskabet Kolding" vs. et selskab
     # der blot LIGGER i Kolding). Ordret navn slaar altid adresse-sammenfald.
     entydig = (len(scored) == 1 or (top >= 0.9 and top - naest >= 0.1)
-               or (top >= 1.0 and naest < 1.0))
+               or (top >= 1.0 and naest < 1.0)
+               or (top > 1.0 and naest <= 1.0))   # ordret navn slaar navne-indeholdelse
     return {"kunder": kunder, "entydigt_match": entydig,
             "bedste": kunder[0] if entydig else None}
 
@@ -364,7 +368,8 @@ def opret_sag(args, ctx):
                                 "ikke tilnærmelsesvis. Sig det til brugeren, og spørg om det er "
                                 "en HELT ny kunde (opret_kunde).",}
         if (len(staerke) == 1 or staerke[0][0] >= staerke[1][0] + 0.08
-                or (staerke[0][0] >= 1.0 and staerke[1][0] < 1.0)):
+                or (staerke[0][0] >= 1.0 and staerke[1][0] < 1.0)
+                or (staerke[0][0] > 1.0 and staerke[1][0] <= 1.0)):   # ordret navn vinder
             kn = str(staerke[0][1].get("customer_number"))
         else:
             return {"resultat": "Flere kunder matcher navnet. Spoerg brugeren HVILKEN (kun én gang). "
