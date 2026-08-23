@@ -958,7 +958,8 @@ def sag_status(args, ctx):
 
 
 def tildel_sag(args, ctx):
-    """Tildel en sag til en medarbejder (saetter Ansvarlig). Kun leder."""
+    """Tildel en sag til en medarbejder (saetter Ansvarlig). Baade ledere og
+    medarbejdere maa tildele - alt logges med hvem der gjorde det."""
     sag = args["sagsnummer"]
     mids, ukendte = _find_medarbejdere(args, ctx, kraev=True)
     if ukendte:
@@ -1248,7 +1249,7 @@ TOOLS = [
         }},
     },
     {
-        "func": tildel_sag, "roles": {"pro"},
+        "func": tildel_sag, "roles": {"pro", "jun"},   # medarbejdere maa ogsaa tildele til hinanden
         "schema": {"type": "function", "function": {
             "name": "tildel_sag",
             "description": "Tildel en sag til en MEDARBEJDER saa den staar som Ansvarlig og dukker op "
