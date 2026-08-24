@@ -96,8 +96,11 @@ def send_sms(til, tekst, kontekst=""):
     payload = {"sender": SMS_SENDER, "message": tekst,
                "recipients": [{"msisdn": int(msisdn)}]}
     from .config import WEBHOOK_SECRET
-    if APP_BASE_URL and WEBHOOK_SECRET:
-        payload["callback_url"] = f"{APP_BASE_URL.rstrip('/')}/gatewayapi/{WEBHOOK_SECRET}/dlr"
+    base = (APP_BASE_URL or "").rstrip("/")
+    if base and not base.startswith("http"):
+        base = "https://" + base   # GatewayAPI kraever fuld URL med https://
+    if base and WEBHOOK_SECRET:
+        payload["callback_url"] = f"{base}/gatewayapi/{WEBHOOK_SECRET}/dlr"
     r = requests.post("https://gatewayapi.com/rest/mtsms",
                       auth=(GATEWAYAPI_TOKEN, ""), json=payload, timeout=20)
     if not r.ok:

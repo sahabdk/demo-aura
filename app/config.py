@@ -58,7 +58,9 @@ for _r in os.environ.get("REF_CUSTOMERS", "").split(","):
     else:
         REF_CUSTOMERS.append(_r)
 # Offentlig URL til appen (bruges til at bygge portal-links), fx https://aura-production.up.railway.app
-APP_BASE_URL = os.environ.get("APP_BASE_URL", "").rstrip("/")
+APP_BASE_URL = os.environ.get("APP_BASE_URL", "").strip().rstrip("/")
+if APP_BASE_URL and not APP_BASE_URL.startswith("http"):
+    APP_BASE_URL = "https://" + APP_BASE_URL   # taal at variablen er sat uden https://
 # Påmindelse: send igen efter X dage hvis kunden ikke har udfyldt, maks Y mails i alt
 REF_REMINDER_DAGE = int(os.environ.get("REF_REMINDER_DAGE", "3"))
 REF_MAX_MAILS = int(os.environ.get("REF_MAX_MAILS", "2"))
