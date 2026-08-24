@@ -258,12 +258,22 @@ def mark_reminded(aftale_id):
 # ---- Kort samtale-hukommelse (til opklarende dialog) ----
 
 def recent_messages(telegram_id, limit=10):
+    """Samtalehistorik MED tidsstempel foran hver besked, saa modellen kan se
+    at gamle bekraeftelser er GAMLE (og ikke gentager dem dage senere)."""
     with conn() as c:
         rows = c.execute(
-            "SELECT rolle, indhold FROM samtaler WHERE telegram_id=? ORDER BY ts DESC LIMIT ?",
+            "SELECT rolle, indhold, ts FROM samtaler WHERE telegram_id=? ORDER BY ts DESC LIMIT ?",
             (str(telegram_id), limit),
         ).fetchall()
-        return [{"role": r["rolle"], "content": r["indhold"]} for r in reversed(rows)]
+        ud = []
+        for r in reversed(rows):
+            stempel = ""
+            try:
+                stempel = f"[{str(r['ts'])[5:16]}] "   # fx "[08-22 08:09] "
+            except (KeyError, TypeError, IndexError):
+                pass
+            ud.append({"role": r["rolle"], "content": stempel + (r["indhold"] or "")})
+        return ud
 
 
 def save_message(telegram_id, rolle, indhold):
