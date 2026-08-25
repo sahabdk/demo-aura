@@ -252,11 +252,32 @@ def stamdata_tjek():
                             f"kunde {kn} ({d.get('customer_name')}): tlf {tlf} matcher ikke "
                             f"STAMDATA_TEST_TLF")
             continue
-        if db.adr_request_for_kunde(kn):
-            db.log_handling("", "Aura (stamdata)", "system", "stamdata springes over",
-                            f"kunde {kn} ({d.get('customer_name')}): allerede spurgt en gang "
-                            f"- nulstil evt. via /admin/.../adr-nulstil/{kn}")
-            continue   # aldrig sms-spam
+        rec = db.adr_request_for_kunde(kn)
+        if rec:
+            # Allerede spurgt: ingen nye sms'er og INGEN log-stoej ved hver koersel.
+            # Svarer kunden ikke inden for STAMDATA_OPGIV_DAGE (std. 5), faar lederen
+            # EN besked - derefter opgives kunden helt (manuel opfoelgning).
+            if rec.get("status") != "done" and not db.get_meta(f"stamdata_opgivet_{kn}"):
+                try:
+                    oprettet = datetime.strptime(str(rec.get("created_at"))[:19],
+                                                 "%Y-%m-%d %H:%M:%S")
+                    dage = (datetime.utcnow() - oprettet).days
+                except (ValueError, TypeError):
+                    dage = 0
+                if dage >= int(os.environ.get("STAMDATA_OPGIV_DAGE", "5")):
+                    db.set_meta(f"stamdata_opgivet_{kn}", "1")
+                    try:
+                        telegram.send_leader(LEADER_GROUP_CHAT_ID,
+                            f"⏰ Faktura-email mangler stadig: {d.get('customer_name') or 'kunden'} "
+                            f"(kunde {kn}) har ikke svaret på SMS'en sendt for {dage} dage siden. "
+                            "Aura rykker ikke igen — følg op manuelt (ring, eller udfyld "
+                            "kundekortet direkte).")
+                    except Exception:
+                        pass
+                    db.log_handling("", "Aura (stamdata)", "system", "stamdata opgivet",
+                                    f"kunde {kn} ({d.get('customer_name')}): intet svar efter "
+                                    f"{dage} dage - lederen adviseret, kunden røres ikke igen")
+            continue
         token = _secrets.token_urlsafe(16)
         db.create_adr_request(token, tlf, d.get("customer_name") or "",
                               kundenummer=kn, felter=",".join(mangler))
