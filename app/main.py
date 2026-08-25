@@ -25,18 +25,18 @@ ADMIN_SECRET = os.environ.get("ADMIN_SECRET") or WEBHOOK_SECRET
 @app.on_event("startup")
 def _startup():
     import requests
-    from .config import APP_BASE_URL
+    from .config import APP_BASE_URL, TELEGRAM_TOKEN
 
     db.init_db()
     db.seed_users_from_env()   # opretter brugere fra SEED_USERS-miljøvariablen
     start_scheduler()
 
     # Registrer Telegram-webhook så botten modtager SMS'er
-    if APP_BASE_URL and WEBHOOK_SECRET:
+    if APP_BASE_URL and WEBHOOK_SECRET and TELEGRAM_TOKEN:
         webhook_url = f"{APP_BASE_URL.rstrip('/')}/telegram/{WEBHOOK_SECRET}/webhook"
         try:
             r = requests.post(
-                f"https://api.telegram.org/bot{telegram.TELEGRAM_TOKEN}/setWebhook",
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
                 json={"url": webhook_url, "allowed_updates": ["message", "callback_query"]},
                 timeout=10
             )
