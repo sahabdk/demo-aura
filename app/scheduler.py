@@ -16,6 +16,14 @@ from . import db, telegram, ordrestyring as os_api
 log = logging.getLogger("aura.scheduler")
 
 
+def _godmorgen(tekst):
+    """Alle automatiske morgen-beskeder (hverdage, til kl. 8) starter med Godmorgen ☕."""
+    nu = now_local()
+    if nu.weekday() < 5 and 4 <= nu.hour <= 8:
+        return f"Godmorgen ☕\n\n{tekst}"
+    return tekst
+
+
 def morning_digest():
     nu = now_local()
     print(f"[morgen] morgen-oversigt koerer nu (serverens lokale tid: {nu:%Y-%m-%d %H:%M})", flush=True)
@@ -35,7 +43,8 @@ def morning_digest():
         if not linjer:      # ingen RIGTIGE aftaler -> ingen besked
             continue
         try:
-            telegram.send_message(u["telegram_id"], "🔔 Dine aftaler i dag:\n" + "\n".join(linjer))
+            telegram.send_message(u["telegram_id"],
+                                  _godmorgen("Dine aftaler i dag:\n" + "\n".join(linjer)))
         except Exception:
             log.exception("kunne ikke sende morgen-oversigt til %s", u["telegram_id"])
 
@@ -77,9 +86,9 @@ def faktura_overview():
             linjer.append(f"- {f['kunde']}: {f['beloeb']} kr, forfald {f['forfald']}"
                           + (f", {dage} dage forsinket" if dage else "")
                           + (f", {rykk} rykker(e) sendt" if rykk else ", ingen rykker sendt"))
-        tekst = (f"God morgen.\n\nDer er {len(fakturaer)} forfaldne, ubetalte fakturaer:\n\n"
-                 + "\n".join(linjer)
-                 + "\n\nSend rykkere via Aura i Telegram: skriv 'forfaldne fakturaer'.")
+        tekst = _godmorgen(f"Der er {len(fakturaer)} forfaldne, ubetalte fakturaer:\n\n"
+                           + "\n".join(linjer)
+                           + "\n\nSend rykkere via Aura i Telegram: skriv 'forfaldne fakturaer'.")
         try:
             from .email import _send
             _send(leder_mail, "Forfaldne fakturaer - ugens overblik", tekst)
@@ -91,7 +100,8 @@ def faktura_overview():
     from . import menu
     for u in db.all_users():
         if u.get("rolle") == "pro":
-            telegram.send_message(u["telegram_id"], "God morgen! Her er ugens forfaldne fakturaer:")
+            telegram.send_message(u["telegram_id"],
+                                  _godmorgen("Her er ugens forfaldne fakturaer:"))
             menu.vis_forfaldne(u["telegram_id"])
 
 
