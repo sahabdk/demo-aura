@@ -33,7 +33,7 @@ def _startup():
 
     # Registrer Telegram-webhook så botten modtager SMS'er
     if APP_BASE_URL and WEBHOOK_SECRET and TELEGRAM_TOKEN:
-        webhook_url = f"{APP_BASE_URL.rstrip('/')}/telegram/{WEBHOOK_SECRET}/webhook"
+        webhook_url = f"{APP_BASE_URL.rstrip('/')}/telegram/{WEBHOOK_SECRET}"
         try:
             r = requests.post(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
