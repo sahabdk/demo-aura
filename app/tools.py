@@ -640,10 +640,35 @@ def husk_aftale(args, ctx):
 
 
 def se_aftaler(args, ctx):
+    """Dagens/periodens aftaler = personlige paamindelser + PLANLAGTE SAGER i ordrestyring."""
     fra = args["fra"] + "T00:00:00"
     til = args["til"] + "T23:59:59"
     rows = db.appointments_between(ctx["telegram_id"], fra, til)
-    return {"aftaler": [{"start": r["start"], "kunde": r["kunde"], "opgave": r["opgave"]} for r in rows]}
+    ud = {"paamindelser": [{"start": r["start"], "kunde": r["kunde"], "opgave": r["opgave"]}
+                           for r in rows]}
+    # Planlagt arbejde (Planlagt tid / Dagsoversigt i ordrestyring)
+    try:
+        from datetime import datetime as _dt
+        from zoneinfo import ZoneInfo
+        from .config import TZ
+        tz = ZoneInfo(TZ)
+        s = int(_dt.strptime(fra, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=tz).timestamp())
+        e = int(_dt.strptime(til, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=tz).timestamp())
+        mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+        evts = os_gql.planned_events_between(s, e, user_id=mit_id)
+        ud["planlagte_sager"] = [
+            {"sagsnummer": x["sagsnummer"], "kunde": x["kunde"], "opgave": x["beskrivelse"],
+             "start": _dt.fromtimestamp(x["startTime"], tz).strftime("%Y-%m-%d %H:%M"),
+             "slut": _dt.fromtimestamp(x["stopTime"], tz).strftime("%H:%M") if x["stopTime"] else "",
+             "medarbejder": os_api.user_name(x["user_id"]) if x.get("user_id") else ""}
+            for x in evts]
+        if mit_id is None:
+            ud["bemaerk"] = "brugeren har intet ordrestyring-id, saa ALLE planlagte sager vises"
+    except Exception as ex:
+        ud["planlagte_sager_fejl"] = str(ex)[:150]
+    ud["tip"] = ("Svar samlet: baade planlagte sager (arbejde i kalenderen) og paamindelser er "
+                 "'aftaler'. Er begge tomme: sig 'ingen aftaler'. Tilbyd IKKE at oprette noget.")
+    return ud
 
 
 def _pris(p):
@@ -1600,7 +1625,10 @@ TOOLS = [
         "func": se_aftaler, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "se_aftaler",
-            "description": "Hent aftaler i et datointerval (fra/til som ÅÅÅÅ-MM-DD).",
+            "description": "Hent brugerens aftaler i et datointerval (fra/til som ÅÅÅÅ-MM-DD): "
+                           "BAADE planlagte sager fra ordrestyrings kalender (Planlagt tid) OG "
+                           "personlige paamindelser. Brug ved 'hvad har jeg i morgen', 'hvor mange "
+                           "aftaler', 'hvad skal jeg lave i dag', 'min plan'.",
             "parameters": {"type": "object", "properties": {
                 "fra": {"type": "string"}, "til": {"type": "string"}}, "required": ["fra", "til"]},
         }},

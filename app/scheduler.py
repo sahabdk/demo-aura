@@ -28,11 +28,29 @@ def morning_digest():
     nu = now_local()
     print(f"[morgen] morgen-oversigt koerer nu (serverens lokale tid: {nu:%Y-%m-%d %H:%M})", flush=True)
     today = nu.strftime("%Y-%m-%d")
+    # Planlagt arbejde i ordrestyrings kalender i dag - hentes EN gang for alle brugere
+    planlagt = []
+    from zoneinfo import ZoneInfo
+    from datetime import datetime as _dt
+    tz = ZoneInfo(TZ)
+    try:
+        from . import os_graphql as os_gql
+        s = int(nu.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=tz).timestamp())
+        e = int(nu.replace(hour=23, minute=59, second=59, microsecond=0, tzinfo=tz).timestamp())
+        planlagt = os_gql.planned_events_between(s, e)
+    except Exception as ex:
+        print(f"[morgen] planlagte sager kunne ikke hentes: {str(ex)[:150]}", flush=True)
     for u in db.all_users():
+        linjer = []
+        mit_id = u.get("os_user_id")
+        for x in planlagt:
+            if mit_id is not None and str(x.get("user_id")) != str(mit_id):
+                continue
+            tid = _dt.fromtimestamp(x["startTime"], tz).strftime("%H:%M")
+            linjer.append(f"- kl. {tid} sag {x['sagsnummer']} {x['kunde']}: {x['beskrivelse']}".rstrip(": "))
         # kun aftaler der IKKE allerede er passeret
         rows = db.appointments_between(u["telegram_id"],
                                        nu.isoformat(timespec="seconds"), today + "T23:59:59")
-        linjer = []
         for r in rows:
             tid = (r.get("start") or "")[11:16]
             # normalisér AL slags mellemrum/usynlige tegn - tomme aftaler skal aldrig med

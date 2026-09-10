@@ -441,6 +441,52 @@ def planned_events(case_number):
     return res or []
 
 
+def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200):
+    """Planlagte tider (Dagsoversigt) i et tidsrum paa tvaers af aabne sager.
+    Returnerer [{sagsnummer, beskrivelse, kunde, startTime, stopTime, user_id}].
+    Scanner de aabne sager en for en (API'et kan ikke filtrere plannedEvents paa dato)."""
+    from . import ordrestyring as os_api
+    import time as _t
+    _n = (int(start_ts), int(stop_ts))
+    if _PLAN_CACHE.get("n") == _n and _t.time() - _PLAN_CACHE.get("ts", 0) < 180:
+        alle = _PLAN_CACHE["rows"]
+        return [x for x in alle if user_id is None or str(x.get("user_id")) == str(user_id)]
+    ud = []
+    kunder = {}
+    try:
+        kunder = {str(d.get("customer_number")): d.get("customer_name")
+                  for d in os_api.all_debtors()}
+    except Exception:
+        pass
+    n = 0
+    for c in os_api.cases_paged():
+        if os_api.is_closed(c):
+            continue
+        n += 1
+        if n > maks_sager:
+            break
+        nr = c.get("case_number")
+        try:
+            evts = planned_events(nr)
+        except Exception:
+            continue
+        for e in evts:
+            st, sp = int(e.get("startTime") or 0), int(e.get("stopTime") or 0)
+            if not st or st > stop_ts or (sp or st) < start_ts:
+                continue
+            uid = (e.get("user") or {}).get("id")
+            ud.append({"sagsnummer": nr,
+                       "beskrivelse": (c.get("description") or "").strip()[:80],
+                       "kunde": kunder.get(str(c.get("customer_number"))) or c.get("customer_number"),
+                       "startTime": st, "stopTime": sp, "user_id": uid})
+    ud.sort(key=lambda x: x["startTime"])
+    _PLAN_CACHE.update({"n": _n, "ts": _t.time(), "rows": ud})
+    return [x for x in ud if user_id is None or str(x.get("user_id")) == str(user_id)]
+
+
+_PLAN_CACHE = {}
+
+
 # ---------- dokumentation: upload foto/fil til en sags Dokumentation-fane ----------
 
 def _enum_values(name):
