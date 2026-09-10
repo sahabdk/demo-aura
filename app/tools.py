@@ -384,13 +384,34 @@ def opret_sag(args, ctx):
                                    for s, d in staerke]}
     if not kn:
         return {"fejl": "angiv customer_number eller kunde (kundens navn)"}
+    beskrivelse = _med_adresse(args.get("beskrivelse", ""), args.get("leveringsadresse"))
+
+    # HAARD DUBLET-SPAERRE: samme bruger, samme kunde, samme beskrivelse inden for 15 min
+    # -> der oprettes IKKE en ny sag; den eksisterende returneres (uanset hvad AI'en tror).
+    import json as _json, time as _time, re as _re
+    _noegle = f"sidste_sag_{ctx['telegram_id']}"
+    _norm = lambda s: _re.sub(r"\W+", " ", (s or "").lower()).strip()
+    try:
+        sidste = _json.loads(db.get_meta(_noegle) or "null") or {}
+    except Exception:
+        sidste = {}
+    if (sidste.get("kn") == kn and sidste.get("besk") == _norm(beskrivelse)
+            and _time.time() - float(sidste.get("ts") or 0) < 900 and sidste.get("sag")):
+        return {"resultat": "DUBLET STOPPET: præcis denne sag blev oprettet for få minutter siden. "
+                            "Der er IKKE oprettet en ny. Brug det eksisterende sagsnummer, og "
+                            "bekræft det kort - opret ALDRIG igen.",
+                "sagsnummer": sidste["sag"], "kundenummer": kn, "dublet": True}
+
     res = os_api.create_case(
         customer_number=kn,
-        beskrivelse=_med_adresse(args.get("beskrivelse", ""), args.get("leveringsadresse")),
+        beskrivelse=beskrivelse,
         reference=args.get("reference", ""),
         projektnavn=args.get("projektnavn", ""),
     )
     sag = res.get("case_number")
+    if sag:
+        db.set_meta(_noegle, _json.dumps({"kn": kn, "besk": _norm(beskrivelse),
+                                          "sag": sag, "ts": _time.time()}))
     # Sæt den der oprettede som ansvarlig — kun hvis de har et ordrestyring-id
     ekstra = {}
     mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
