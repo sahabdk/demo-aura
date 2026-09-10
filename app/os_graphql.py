@@ -458,9 +458,18 @@ def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200):
                   for d in os_api.all_debtors()}
     except Exception:
         pass
+    # Statusser der IKKE er arbejde: lukket/afsluttet, aflyst, annulleret, faktureret
+    doede = set()
+    try:
+        for s in os_api.case_statuses():
+            t = (s.get("text") or "").lower()
+            if any(o in t for o in ("lukket", "afslut", "aflyst", "annull", "faktur", "closed", "cancel")):
+                doede.add(str(s.get("id")))
+    except Exception:
+        pass
     n = 0
     for c in os_api.cases_paged():
-        if os_api.is_closed(c):
+        if os_api.is_closed(c) or str(c.get("status")) in doede:
             continue
         n += 1
         if n > maks_sager:

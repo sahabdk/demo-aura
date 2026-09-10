@@ -476,7 +476,21 @@ def saet_status(args, ctx):
                             + ". Spørg brugeren hvilken der menes."}
     os_api.update_case(sag, status=int(best.get("id")))
     os_api.ryd_kortcache()
-    return {"resultat": f"Sag {sag}: status sat til '{best.get('text')}'"}
+    ud = {"resultat": f"Sag {sag}: status sat til '{best.get('text')}'"}
+    # Aflyst/annulleret: fjern ogsaa planlagt tid, saa sagen forsvinder fra kalenderen
+    if any(o in _norm(best.get("text") or "") for o in ("aflyst", "annull")):
+        try:
+            fjernet = 0
+            for ev in os_gql.planned_events(sag):
+                if ev.get("id"):
+                    os_gql.delete_event(ev["id"])
+                    fjernet += 1
+            if fjernet:
+                ud["resultat"] += f" - {fjernet} planlagt tid fjernet fra kalenderen"
+            os_gql._PLAN_CACHE.clear()
+        except Exception as e:
+            ud["planlagt_tid_fejl"] = str(e)[:120]
+    return ud
 
 
 def afslut_sag(args, ctx):
@@ -1103,6 +1117,7 @@ def planlaeg_sag(args, ctx):
         print(f"[planlaeg_sag] kunne ikke rydde gamle planer: {str(e)[:200]}", flush=True)
     res = os_gql.create_planned_event(sag, mids, start, stop, text=(args.get("beskrivelse") or None))
     hvem = ", ".join(os_api.user_name(m) or str(m) for m in mids)
+    os_gql._PLAN_CACHE.clear()   # ny plan skal kunne ses med det samme i "mine aftaler"
     tekst = f"Sag {sag} er planlagt {dato} kl. {fra}-{til} med {hvem}."
     if erstattet:
         tekst = f"Planen er OPDATERET (den gamle blev erstattet): {tekst}"
