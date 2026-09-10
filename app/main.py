@@ -684,6 +684,7 @@ async def telegram_webhook(secret: str, request: Request):
             telegram.send_chat_action(chat["id"], "record_voice" if var_tale else "typing")
 
     threading.Thread(target=_puls, daemon=True).start()
+    _t0 = _time.time()
     try:
         svar = run_agent(ctx, text, raa_tekst, talt=var_tale)
     except Exception as e:
@@ -693,18 +694,21 @@ async def telegram_webhook(secret: str, request: Request):
     finally:
         _stop_typing.set()
 
+    # Citér KUN spørgsmålet når svaret kommer forsinket (>20 s) - så kan det stadig kobles
+    # til det rigtige spørgsmål ved flere beskeder i træk, uden at fylde en normal samtale
+    # med citat-bokse.
+    citer = msg.get("message_id") if (_time.time() - _t0) > 20 else None
+
     # Talte du til hende -> svar med tale; ellers tekst (sparer data ved skrift)
     if var_tale:
         try:
-            telegram.send_voice(chat["id"], telegram.synthesize_voice(svar),
-                                reply_to=msg.get("message_id"))
+            telegram.send_voice(chat["id"], telegram.synthesize_voice(svar), reply_to=citer)
         except Exception as e:
             log.exception("tts-fejl")
-            telegram.send_message(chat["id"], svar, reply_to=msg.get("message_id"))
+            telegram.send_message(chat["id"], svar, reply_to=citer)
             _notify_leader(f"TTS-fejl: {e}")
     else:
-        # citér spørgsmålet, så svaret altid kan kobles til det (svar kan komme forsinket)
-        telegram.send_message(chat["id"], svar, reply_to=msg.get("message_id"))
+        telegram.send_message(chat["id"], svar, reply_to=citer)
     return {"ok": True}
 
 

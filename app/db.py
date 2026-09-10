@@ -220,7 +220,7 @@ def add_appointment(telegram_id, kunde, opgave, start_iso):
                     a = (row["opgave"] or "").strip().lower()
                     b = (opgave or "").strip().lower()
                     if a == b or difflib.SequenceMatcher(None, a, b).ratio() >= 0.75:
-                        return   # dublet -> opret ikke igen
+                        return False   # dublet -> opret ikke igen
                 except (ValueError, TypeError):
                     pass
         except (ValueError, TypeError):
@@ -229,6 +229,7 @@ def add_appointment(telegram_id, kunde, opgave, start_iso):
             "INSERT INTO aftaler(telegram_id, kunde, opgave, start) VALUES(?,?,?,?)",
             (str(telegram_id), kunde, opgave, start_iso),
         )
+        return True
 
 
 def appointments_between(telegram_id, fra_iso, til_iso):

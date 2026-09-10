@@ -648,7 +648,11 @@ def husk_aftale(args, ctx):
             return {"resultat": f"Jeg kunne ikke finde '{navn}' blandt Telegram-brugerne, saa "
                                 "paamindelsen er IKKE oprettet. Tjek navnet med 'vis medarbejdere'."}
         modtager_tid, modtager_navn = kandidat["telegram_id"], kandidat.get("navn")
-    db.add_appointment(modtager_tid, args.get("kunde"), args.get("opgave"), args["start"])
+    ny = db.add_appointment(modtager_tid, args.get("kunde"), args.get("opgave"), args["start"])
+    if ny is False:
+        return {"resultat": "DUBLET: denne paamindelse findes allerede (oprettet for lidt siden). "
+                            "Der er IKKE oprettet en ny. Naevn den IKKE igen i dit svar - svar kun "
+                            "paa det brugeren spurgte om nu.", "dublet": True}
     hvem = f" - paamindelsen sendes til {modtager_navn}" if modtager_navn else ""
     return {"resultat": f"Husket: {args.get('opgave')} ({args['start']}){hvem}"}
 
