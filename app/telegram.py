@@ -1,5 +1,6 @@
 """Telegram-hjælpere: send besked, hent + transskribér talebesked (Whisper), tale (TTS)."""
 import io
+import os
 import re
 import requests
 from openai import OpenAI
@@ -214,9 +215,35 @@ def _til_tale(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.environ.get("ELEVENLABS_VOICE_ID", "4RklGmuxoAskAbGXplXN")
+ELEVENLABS_MODEL = os.environ.get("ELEVENLABS_MODEL", "eleven_flash_v2_5")
+
+
+def _elevenlabs_voice(text: str) -> bytes:
+    """Tale via ElevenLabs (MP3). Kaldes kun naar ELEVENLABS_API_KEY er sat."""
+    r = requests.post(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}",
+        params={"output_format": "mp3_44100_128"},
+        headers={"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"},
+        json={"text": text, "model_id": ELEVENLABS_MODEL,
+              "voice_settings": {"stability": 0.4, "similarity_boost": 0.8,
+                                 "speed": 1.05, "use_speaker_boost": True}},
+        timeout=60)
+    if not r.ok:
+        raise RuntimeError(f"ElevenLabs {r.status_code}: {r.text[:200]}")
+    return r.content
+
+
 def synthesize_voice(text: str) -> bytes:
-    """Lav tale (OGG/Opus) ud fra tekst. Tal/forkortelser laves om til ord, så det
-    lyder naturligt på dansk. gpt-4o-*-tts understøtter en tone-instruktion."""
+    """Lav tale ud fra tekst. Tal/forkortelser laves om til ord, så det lyder
+    naturligt på dansk. ElevenLabs bruges hvis noeglen er sat - ellers (eller ved
+    fejl) OpenAI TTS som fallback."""
+    if ELEVENLABS_API_KEY:
+        try:
+            return _elevenlabs_voice(_til_tale(text))
+        except Exception as e:
+            print(f"[tts] ElevenLabs fejlede, bruger OpenAI: {str(e)[:150]}", flush=True)
     kwargs = dict(model=OPENAI_TTS_MODEL, voice=OPENAI_TTS_VOICE,
                   input=_til_tale(text), response_format="opus")
     _DEFAULT_TONE = ("Du er en dansk kvinde der taler helt naturligt i en telefonsamtale "
@@ -236,5 +263,8 @@ def send_voice(chat_id, audio: bytes, reply_to=None):
     if reply_to:
         data["reply_to_message_id"] = reply_to
         data["allow_sending_without_reply"] = True
-    requests.post(f"{API}/sendVoice", data=data,
-                  files={"voice": ("svar.ogg", audio, "audio/ogg")}, timeout=60)
+    if audio[:4] == b"OggS":
+        fil = ("svar.ogg", audio, "audio/ogg")
+    else:
+        fil = ("svar.mp3", audio, "audio/mpeg")   # ElevenLabs leverer mp3
+    requests.post(f"{API}/sendVoice", data=data, files={"voice": fil}, timeout=60)
