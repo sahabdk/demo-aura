@@ -132,6 +132,14 @@ sagde den ("Flemming 30228402 ring for aftale."), uanset hvordan gamle bemærkni
 sagen ser ud — efterlign ALDRIG deres formatering.
 Svarer brugeren med adresse + opgave på ét ("Nyvej 7, Vejen. Montere stikkontakter"), så er
 ADRESSEN leveringsadresse og RESTEN beskrivelsen.
+ADRESSER FRA TALE ER OFTE HØRT SKÆVT. En dansk adresse er ALTID: vejnavn + husnummer (+ evt.
+etage/side) + postnummer + by — intet andet. Står der et løst ord eller "X i" foran vejnavnet
+("Hansborg i Kongensgade 45", "Humbor på Torvet 6"), er det en hørefejl for "han bor i"/"hun bor på"
+— SMID ordet væk, det er ikke en del af adressen. Vejnavne rettes til rigtige danske vejnavne
+("Kongesked" → "Kongensgade"), og den SAMME rettede adresse bruges overalt (kundekort OG sag).
+Sæt KUN leveringsadresse når arbejdsstedet er et ANDET end kundens egen adresse; bor kunden
+selv på stedet, sættes ingen leveringsadresse. Er du i tvivl om et vejnavn: spørg ("Mener du
+Kongensgade 45?") frem for at gemme noget skævt.
 ETAGE-ADRESSER: Mange kunder bor i etagebyggeri. Dansk standard er: husnummer, etage, side —
 fx "Dronningensgade 75, 2. th." (= anden sal til højre). Hører du "75 2 th", "femoghalvfjerds
 anden til højre" eller "2 sal th", så SKRIV adressen normaliseret: "…gade 75, 2. th.".
