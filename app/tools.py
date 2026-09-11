@@ -723,6 +723,23 @@ def tilfoej_vare(args, ctx):
     afvist = _ejer_eller_afvis(args["sagsnummer"], ctx)
     if afvist:
         return afvist
+    # HAARD DUBLET-SPAERRE: samme vare paa samme sag fra samme bruger inden for 10 min
+    # -> laegges IKKE paa igen (AI'en kalder af og til vaerktoejet to gange).
+    import json as _json, time as _time
+    _noegle = f"sidste_vare_{ctx['telegram_id']}"
+    _sig = f"{args['sagsnummer']}|{args.get('vare_id') or args.get('varenummer') or args.get('beskrivelse')}|{args.get('antal', 1)}"
+    try:
+        sidste = _json.loads(db.get_meta(_noegle) or "null") or {}
+    except Exception:
+        sidste = {}
+    if (sidste.get("sig") == _sig and _time.time() - float(sidste.get("ts") or 0) < 600
+            and not args.get("gentag")):
+        return {"resultat": "DUBLET STOPPET: praecis denne vare blev lagt paa sagen for faa minutter "
+                            "siden. Den er IKKE lagt paa igen. Naevn den ikke som ny - svar kort. "
+                            "KUN hvis brugeren UDTRYKKELIGT beder om den samme vare EN GANG TIL "
+                            "('endnu en', 'en mere'), kald igen med gentag=true.",
+                "dublet": True}
+    db.set_meta(_noegle, _json.dumps({"sig": _sig, "ts": _time.time()}))
     try:
         _mat = os_gql.add_case_material(
             args["sagsnummer"],
@@ -855,6 +872,19 @@ def registrer_timer(args, ctx):
     cid = os_gql._case_internal_id(sag)
     if not cid:
         return {"fejl": f"kunne ikke finde sag {sag}"}
+    # HAARD DUBLET-SPAERRE: samme timer (sag, medarbejder, dato, fra-til) inden for 10 min
+    import json as _json, time as _time
+    _noegle = f"sidste_timer_{ctx['telegram_id']}"
+    _sig = f"{sag}|{emp_id}|{dato}|{fra}-{til}"
+    try:
+        sidste = _json.loads(db.get_meta(_noegle) or "null") or {}
+    except Exception:
+        sidste = {}
+    if sidste.get("sig") == _sig and _time.time() - float(sidste.get("ts") or 0) < 600:
+        return {"resultat": f"DUBLET STOPPET: praecis disse timer ({fra}-{til} paa sag {sag}) blev "
+                            "registreret for faa minutter siden. De er IKKE registreret igen. "
+                            "Svar kort - naevn dem ikke som nye.", "dublet": True}
+    db.set_meta(_noegle, _json.dumps({"sig": _sig, "ts": _time.time()}))
     # Time-typer: medarbejderen har maaske kun lov til nogle. Proev den oenskede/standard
     # foerst; afvises den paa rettigheder, proev de oevrige typer indtil en gaar igennem.
     typer = os_api.employee_types()
@@ -1445,7 +1475,8 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {
                 "sagsnummer": {"type": "string"}, "vare_id": {"type": "string"},
                 "antal": {"type": "number"}, "varenummer": {"type": "string"},
-                "beskrivelse": {"type": "string"}},
+                "beskrivelse": {"type": "string"},
+                "gentag": {"type": "boolean", "description": "true KUN naar brugeren udtrykkeligt vil have samme vare en gang til"}},
                 "required": ["sagsnummer", "vare_id"]},
         }},
     },
