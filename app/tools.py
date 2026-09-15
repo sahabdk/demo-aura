@@ -487,7 +487,7 @@ def saet_status(args, ctx):
                     fjernet += 1
             if fjernet:
                 ud["resultat"] += f" - {fjernet} planlagt tid fjernet fra kalenderen"
-            os_gql._PLAN_CACHE.clear()
+            os_gql.plan_indeks_fjern(sag)
         except Exception as e:
             ud["planlagt_tid_fejl"] = str(e)[:120]
     return ud
@@ -673,6 +673,9 @@ def se_aftaler(args, ctx):
         s = int(_dt.strptime(fra, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=tz).timestamp())
         e = int(_dt.strptime(til, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=tz).timestamp())
         mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
+        if not os_gql._PLAN_CACHE.get("n"):
+            raise RuntimeError("kalender-indekset bygges lige nu (lige efter genstart) - "
+                               "sig til brugeren at planlagte sager kan ses om et minut")
         evts = os_gql.planned_events_between(s, e, user_id=mit_id)
         ud["planlagte_sager"] = [
             {"sagsnummer": x["sagsnummer"], "kunde": x["kunde"], "opgave": x["beskrivelse"],
@@ -1151,7 +1154,15 @@ def planlaeg_sag(args, ctx):
         print(f"[planlaeg_sag] kunne ikke rydde gamle planer: {str(e)[:200]}", flush=True)
     res = os_gql.create_planned_event(sag, mids, start, stop, text=(args.get("beskrivelse") or None))
     hvem = ", ".join(os_api.user_name(m) or str(m) for m in mids)
-    os_gql._PLAN_CACHE.clear()   # ny plan skal kunne ses med det samme i "mine aftaler"
+    # ny plan skal kunne ses med det samme i "mine aftaler" - laeg den i indekset
+    try:
+        c = os_api.get_case(sag) or {}
+        kunde = (os_api.get_debtor(c.get("customer_number")) or {}).get("customer_name") \
+            if c.get("customer_number") else None
+        os_gql.plan_indeks_tilfoej(sag, c.get("description"), kunde or c.get("customer_number"),
+                                   start, stop, mids)
+    except Exception:
+        pass
     tekst = f"Sag {sag} er planlagt {dato} kl. {fra}-{til} med {hvem}."
     if erstattet:
         tekst = f"Planen er OPDATERET (den gamle blev erstattet): {tekst}"

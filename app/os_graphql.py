@@ -447,10 +447,15 @@ def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200):
     Scanner de aabne sager en for en (API'et kan ikke filtrere plannedEvents paa dato)."""
     from . import ordrestyring as os_api
     import time as _t
-    _n = (int(start_ts), int(stop_ts))
-    if _PLAN_CACHE.get("n") == _n and _t.time() - _PLAN_CACHE.get("ts", 0) < 180:
-        alle = _PLAN_CACHE["rows"]
-        return [x for x in alle if user_id is None or str(x.get("user_id")) == str(user_id)]
+    start_ts, stop_ts = int(start_ts), int(stop_ts)
+    # Indekset (bygget af scheduler hvert 10. min) daekker et bredt vindue - svar fra det
+    # hvis det daekker det oenskede tidsrum og er friskt (< 20 min).
+    c_n = _PLAN_CACHE.get("n")
+    if (c_n and c_n[0] <= start_ts and c_n[1] >= stop_ts
+            and _t.time() - _PLAN_CACHE.get("ts", 0) < 1200):
+        return [x for x in _PLAN_CACHE["rows"]
+                if start_ts <= x["startTime"] <= stop_ts
+                and (user_id is None or str(x.get("user_id")) == str(user_id))]
     ud = []
     kunder = {}
     try:
@@ -489,11 +494,39 @@ def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200):
                        "kunde": kunder.get(str(c.get("customer_number"))) or c.get("customer_number"),
                        "startTime": st, "stopTime": sp, "user_id": uid})
     ud.sort(key=lambda x: x["startTime"])
-    _PLAN_CACHE.update({"n": _n, "ts": _t.time(), "rows": ud})
+    _PLAN_CACHE.update({"n": (start_ts, stop_ts), "ts": _t.time(), "rows": ud})
     return [x for x in ud if user_id is None or str(x.get("user_id")) == str(user_id)]
 
 
 _PLAN_CACHE = {}
+
+
+def byg_plan_indeks():
+    """Kaldes af scheduleren: bygger indekset over planlagt tid fra i gaar til +14 dage,
+    saa 'hvad har jeg i morgen' svarer paa et sekund i stedet for at scanne alle sager."""
+    import time as _t
+    nu = int(_t.time())
+    _PLAN_CACHE.clear()
+    planned_events_between(nu - 86400, nu + 14 * 86400)
+
+
+def plan_indeks_tilfoej(sagsnummer, beskrivelse, kunde, start_ts, stop_ts, user_ids):
+    """Efter planlaeg_sag: laeg den nye plan direkte i indekset (ingen ny scanning)."""
+    rows = _PLAN_CACHE.get("rows")
+    if rows is None:
+        return
+    rows[:] = [r for r in rows if str(r.get("sagsnummer")) != str(sagsnummer)]
+    for u in (user_ids or [None]):
+        rows.append({"sagsnummer": sagsnummer, "beskrivelse": (beskrivelse or "")[:80],
+                     "kunde": kunde, "startTime": int(start_ts), "stopTime": int(stop_ts),
+                     "user_id": u})
+    rows.sort(key=lambda x: x["startTime"])
+
+
+def plan_indeks_fjern(sagsnummer):
+    rows = _PLAN_CACHE.get("rows")
+    if rows is not None:
+        rows[:] = [r for r in rows if str(r.get("sagsnummer")) != str(sagsnummer)]
 
 
 # ---------- dokumentation: upload foto/fil til en sags Dokumentation-fane ----------

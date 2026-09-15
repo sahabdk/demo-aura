@@ -399,8 +399,19 @@ def sundheds_vagt():
         print(f"[sundheds_vagt] mail fejlede: {str(e)[:150]}", flush=True)
 
 
+def plan_indeks():
+    """Hvert 10. min: indeks over planlagt tid, saa aftale-opslag svarer med det samme."""
+    try:
+        from . import os_graphql as os_gql
+        os_gql.byg_plan_indeks()
+    except Exception as e:
+        print(f"[plan_indeks] fejlede: {str(e)[:150]}", flush=True)
+
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone=TZ)
+    sch.add_job(plan_indeks, "cron", minute="*/10")
+    sch.add_job(plan_indeks, "date")   # ogsaa straks ved opstart (i baggrunden)
     sch.add_job(morning_digest, "cron", hour=7, minute=0)
     sch.add_job(soon_reminders, "cron", minute="*/5")   # hele døgnet, alle dage
     sch.add_job(faktura_overview, "cron", day_of_week="mon", hour=8, minute=0)

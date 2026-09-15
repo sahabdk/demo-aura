@@ -511,13 +511,27 @@ def _already_handled(update_id):
 
 @app.post("/telegram/{secret}")
 async def telegram_webhook(secret: str, request: Request):
+    """Svarer Telegram MED DET SAMME og behandler beskeden i en baggrundstraad.
+    Ellers venter Telegram paa hele agent-koerslen (timeout -> gensendelser -> dubletter),
+    og alle andre kald (Pilly, portaler) blokerer imens."""
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
         raise HTTPException(403, "forkert webhook-token")
-
     update = await request.json()
     if _already_handled(update.get("update_id")):
         return {"ok": True}   # samme besked igen -> ignorér (undgå dobbelt-behandling)
 
+    def _kør():
+        try:
+            _haandter_update(update)
+        except Exception as e:
+            log.exception("webhook-behandling fejlede")
+            _notify_leader(f"Webhook-fejl: {str(e)[:200]}")
+
+    threading.Thread(target=_kør, daemon=True).start()
+    return {"ok": True}
+
+
+def _haandter_update(update):
     # Knap-tryk (callback_query) — kun for leder
     cq = update.get("callback_query")
     if cq:
