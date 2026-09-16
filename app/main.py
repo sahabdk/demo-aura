@@ -178,7 +178,8 @@ async def admin_indstilling(secret: str, request: Request):
 _SKABELON_NOEGLER = ("skabelon_rykker1_emne", "skabelon_rykker1_tekst",
                      "skabelon_rykker2_emne", "skabelon_rykker2_tekst",
                      "skabelon_rykker3_emne", "skabelon_rykker3_tekst",
-                     "skabelon_sms_adresse", "betalingsinfo", "leder_email", "svar_email")
+                     "skabelon_sms_adresse", "betalingsinfo", "leder_email", "svar_email",
+                     "telefon_mobiler", "telefon_intro", "telefon_svarer", "telefon_private")
 
 
 @app.get("/admin/{secret}/skabeloner")
@@ -198,6 +199,12 @@ def admin_skabeloner(secret: str):
     ud["betalingsinfo"] = db.get_meta("betalingsinfo") or PAYMENT_INFO or ""
     ud["leder_email"] = db.get_meta("leder_email") or os.environ.get("LEADER_EMAIL", "")
     ud["svar_email"] = db.get_meta("svar_email") or os.environ.get("EMAIL_REPLY_TO", "")
+    from . import telefonnotat as _tn
+    ud["telefon_mobiler"] = db.get_meta("telefon_mobiler") or ""
+    ud["telefon_intro"] = db.get_meta("telefon_intro") or _tn.STD_INTRO
+    ud["telefon_svarer"] = db.get_meta("telefon_svarer") or _tn.STD_SVARER
+    ud["telefon_private"] = db.get_meta("telefon_private") or ""
+    ud["telefon_webhook"] = _tn._url("voice") if _tn.TWILIO_SID else "(TWILIO_SID/TWILIO_TOKEN mangler i Railway)"
     return ud
 
 
@@ -387,6 +394,56 @@ async def gatewayapi_dlr(secret: str, request: Request):
             pass
     elif status == "DELIVERED":
         db.log_handling("", "GatewayAPI", "system", "sms leveret", ctx)
+    return {"ok": True}
+
+
+# ---------- Telefonnotat (Twilio): Aura lytter med og tager noter ----------
+
+def _twiml(xml: str):
+    from fastapi.responses import Response
+    return Response(content='<?xml version="1.0" encoding="UTF-8"?>' + xml, media_type="text/xml")
+
+
+@app.post("/twilio/{secret}/voice")
+async def twilio_voice(secret: str, request: Request):
+    """Twilio-nummerets 'A call comes in'-webhook: intro + ring ud til mobilerne."""
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    from . import telefonnotat
+    form = dict(await request.form())
+    print(f"[telefon] opkald fra {form.get('From')} -> ringer ud", flush=True)
+    db.log_handling("", "Aura (telefon)", "system", "opkald modtaget", str(form.get("From") or "skjult"))
+    return _twiml(telefonnotat.twiml_indgaaende(form))
+
+
+@app.post("/twilio/{secret}/efter-dial")
+async def twilio_efter_dial(secret: str, request: Request):
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    from . import telefonnotat
+    form = dict(await request.form())
+    print(f"[telefon] dial-status {form.get('DialCallStatus')}", flush=True)
+    return _twiml(telefonnotat.twiml_efter_dial(form))
+
+
+@app.post("/twilio/{secret}/efter-svarer")
+async def twilio_efter_svarer(secret: str, request: Request):
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    from . import telefonnotat
+    return _twiml(telefonnotat.twiml_efter_svarer())
+
+
+@app.post("/twilio/{secret}/optagelse")
+async def twilio_optagelse(secret: str, request: Request, type: str = "samtale"):
+    """Optagelsen er klar -> udskrift, kundematch, resume, Telegram (i baggrunden)."""
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    from . import telefonnotat
+    form = dict(await request.form())
+    if (form.get("RecordingStatus") or "completed") != "completed":
+        return {"ok": True}
+    telefonnotat.start_behandling(form, "svarer" if type == "svarer" else "samtale")
     return {"ok": True}
 
 
@@ -662,7 +719,8 @@ def _haandter_update(update):
     reply = msg.get("reply_to_message")
     if reply and reply.get("text"):
         rt = reply["text"]
-        if "Telefonbesked fra AI-Aura" in rt or "Adresse modtaget" in rt:
+        if ("Telefonbesked fra AI-Aura" in rt or "Adresse modtaget" in rt
+                or "Telefonnotat" in rt or "Telefonsvarer-besked" in rt):
             # Svar på en telefonbesked: giv agenten ALLE oplysningerne fra den
             text = ("(Brugeren svarer på denne telefonbesked fra telefon-agenten:\n---\n"
                     + rt[:700] + "\n---\n"
