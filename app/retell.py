@@ -225,15 +225,18 @@ button{{background:#1a7f37;color:#fff;border:0;padding:.7rem 1.4rem;border-radiu
 </style></head><body><h2>Vandt & Vandt</h2><p>{besked}</p>{form}</body></html>"""
 
 _FELT_TEKST = {"navn": "Navn", "adresse": "Adresse (vej og nr.)", "postnr": "Postnummer",
-               "by": "By", "email": "Email (til faktura)"}
+               "by": "By", "email": "Email (til faktura)", "telefon": "Telefon"}
+NYKUNDE_FELTER = "nykunde,navn,adresse,postnr,by,telefon,email"
 
 
-def _adr_form(felter, navn=""):
+def _adr_form(felter, navn="", telefon=""):
     """Byg formularen dynamisk - stamdata-links viser KUN de felter der mangler."""
     dele = []
     for f in felter:
-        typ = "email" if f == "email" else "text"
-        vaerdi = navn if f == "navn" else ""
+        if f == "nykunde":
+            continue   # markoer, ikke et felt
+        typ = "email" if f == "email" else ("tel" if f == "telefon" else "text")
+        vaerdi = navn if f == "navn" else (telefon if f == "telefon" else "")
         dele.append(f'<label>{_FELT_TEKST.get(f, f)}</label>'
                     f'<input name="{f}" type="{typ}" value="{vaerdi}" required>')
     return '<form method="post">' + "".join(dele) + '<button type="submit">Send</button></form>'
@@ -250,11 +253,16 @@ def adr_side(token):
         return _ADR_HTML.format(besked="Linket er ugyldigt eller udløbet.", form="")
     if r.get("status") == "done":
         return _ADR_HTML.format(besked="Tak — vi har allerede modtaget dine oplysninger. 👍", form="")
+    felter = _adr_felter(r)
     if r.get("kundenummer"):
         besked = "Tak fordi du valgte os! Vi mangler et par oplysninger i vores kartotek — udfyld dem venligst herunder."
+    elif "nykunde" in felter:
+        besked = "Tak for dit opkald! Udfyld venligst dine oplysninger, så vi kan oprette dig som kunde."
     else:
         besked = "Tak for dit opkald! Skriv din adresse herunder, så vi har den helt rigtigt."
-    return _ADR_HTML.format(besked=besked, form=_adr_form(_adr_felter(r), navn=(r.get("navn") or "")))
+    tlf = _norm_tlf(r.get("telefon") or "")
+    return _ADR_HTML.format(besked=besked, form=_adr_form(felter, navn=(r.get("navn") or ""),
+                                                          telefon=tlf[-8:] if len(tlf) >= 8 else ""))
 
 
 def adr_submit(token, form):
@@ -262,9 +270,49 @@ def adr_submit(token, form):
     if not r or r.get("status") == "done":
         return adr_side(token)
     felter = _adr_felter(r)
-    svar = {f: (form.get(f) or "").strip() for f in felter}
+    svar = {f: (form.get(f) or "").strip() for f in felter if f != "nykunde"}
     navn = svar.get("navn") or (r.get("navn") or "")
     vist = ", ".join(f"{_FELT_TEKST.get(f, f)}: {v}" for f, v in svar.items() if v)
+
+    if "nykunde" in felter and not r.get("kundenummer"):
+        # NY KUNDE-flow: kunden har selv udfyldt navn/adresse/email -> opret i ordrestyring
+        tlf = _norm_tlf(svar.get("telefon") or r.get("telefon") or "")
+        if len(tlf) == 8:
+            tlf = tlf   # 8 cifre som ordrestyring viser dem
+        try:
+            # findes nummeret alligevel (kunden oprettet i mellemtiden)? -> opdater i stedet
+            eks = find_kunde_ved_telefon(tlf) if tlf else None
+            if eks:
+                kn = str(eks.get("customer_number"))
+                aendr = {k: v for k, v in (("adresse", svar.get("adresse")), ("postnr", svar.get("postnr")),
+                                            ("by", svar.get("by")), ("email", svar.get("email"))) if v}
+                if aendr:
+                    os_api.update_debtor(kn, **aendr)
+                ny = False
+            else:
+                d = os_api.create_debtor(navn=navn, adresse=svar.get("adresse", ""),
+                                         postnr=svar.get("postnr", ""), by=svar.get("by", ""),
+                                         telefon=tlf, mobil=tlf, email=svar.get("email", ""))
+                kn = str((d or {}).get("customer_number") or "")
+                ny = True
+            os_api.ryd_kortcache()
+            try:
+                os_api.all_debtors(force=True)
+            except Exception:
+                pass
+            db.mark_adr_done(token, navn, vist)
+            besked = (f"🆕 Ny kunde oprettet af kunden selv: {navn} (kundenr. {kn})\n{vist}\n"
+                      if ny else f"📇 Kunden fandtes allerede (kundenr. {kn}) - kundekortet er opdateret:\n{vist}\n")
+            besked += f"Kundenr.: {kn} (kunden FINDES i ordrestyring)\n→ Skal jeg oprette sagen fra telefonnotatet på denne kunde? (svar ja)"
+            telegram.send_leader(LEADER_GROUP_CHAT_ID, besked)
+            db.log_handling("", "Aura (telefon)", "system", "ny kunde oprettet via sms-link" if ny else "kundekort opdateret via sms-link",
+                            f"{navn} kundenr. {kn}: {vist}")
+        except Exception as e:
+            print(f"[nykunde] oprettelse fejlede: {str(e)[:200]}", flush=True)
+            db.log_handling("", "Aura (telefon)", "system", "ny kunde fejl", f"{navn}: {str(e)[:150]}")
+            return _ADR_HTML.format(besked="Noget gik galt — prøv venligst igen om lidt.",
+                                    form=_adr_form(felter, navn, svar.get("telefon", "")))
+        return _ADR_HTML.format(besked="Tak! Du er nu oprettet hos os. 👍", form="")
 
     if r.get("kundenummer"):
         # STAMDATA-flow: skriv de udfyldte felter direkte ind paa kundekortet i ordrestyring

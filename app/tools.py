@@ -1174,6 +1174,54 @@ def planlaeg_sag(args, ctx):
     return ud
 
 
+def send_kundeoplysninger_sms(args, ctx):
+    """Ukendt opkalder: send SMS med link, hvor kunden selv udfylder navn, adresse, telefon og
+    email. Naar kunden sender, oprettes han AUTOMATISK som kunde i ordrestyring."""
+    import secrets as _secrets
+    from . import retell as _retell
+    from .config import APP_BASE_URL as _base
+    tlf = _retell._norm_tlf(args.get("telefon") or "")
+    if len(tlf) < 8:
+        return {"fejl": "angiv kundens telefonnummer (8 cifre)"}
+    navn = (args.get("navn") or "").strip()
+    # findes nummeret allerede? saa er der ingen grund til at spoerge
+    try:
+        eks = _retell.find_kunde_ved_telefon(tlf)
+    except Exception:
+        eks = None
+    if eks:
+        return {"resultat": f"Nummeret tilhoerer allerede kunde {eks.get('customer_number')} "
+                            f"({eks.get('customer_name')}) - send IKKE sms, brug det kundenummer.",
+                "kundenummer": eks.get("customer_number")}
+    # dublet-vagt: samme nummer inden for 24 timer
+    sidste = db.get_meta(f"nykunde_sms_{tlf[-8:]}")
+    if sidste:
+        import time as _t
+        if _t.time() - float(sidste) < 86400:
+            return {"resultat": "Der er ALLEREDE sendt et link til det nummer i dag. Send ikke igen - "
+                                "kunden faar besked, naar det er udfyldt."}
+    token = _secrets.token_urlsafe(16)
+    db.create_adr_request(token, tlf, navn, "", _retell.NYKUNDE_FELTER)
+    link = f"{(_base or '').rstrip('/')}/adr/{token}"
+    firma = os.environ.get("FIRMA_NAVN", "os")
+    tekst = (db.get_meta("skabelon_sms_nykunde")
+             or "Tak for dit opkald til {firma}. Udfyld venligst dine oplysninger her, så vi kan "
+                "oprette dig som kunde: {link}")
+    tekst = tekst.replace("{firma}", firma).replace("{link}", link)
+    try:
+        ret = _retell.send_sms(tlf, tekst, kontekst=f"kundeoplysninger-SMS til {navn or tlf}")
+    except Exception as e:
+        return {"fejl": f"SMS kunne ikke sendes: {str(e)[:120]}", "link": link}
+    import time as _t
+    db.set_meta(f"nykunde_sms_{tlf[-8:]}", _t.time())
+    db.log_handling("", ctx.get("navn") or "", ctx.get("telegram_id"), "kundeoplysninger-sms sendt",
+                    f"{navn or ''} {tlf} ({ret})")
+    if ret != "sent":
+        return {"resultat": f"SMS blev ikke sendt ({ret}) - link til kunden: {link}"}
+    return {"resultat": f"SMS sendt til {tlf}. Naar kunden har udfyldt, oprettes han automatisk i "
+                        "ordrestyring, og du faar besked. Sig det kort - og at sagen kan oprettes derefter."}
+
+
 def besked_til_leder(args, ctx):
     """Send en kort besked til lederen i Telegram (medarbejder-oensker, anmodninger m.m.)."""
     tekst = (args.get("besked") or "").strip()
@@ -1321,6 +1369,21 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": send_kundeoplysninger_sms, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "send_kundeoplysninger_sms",
+            "description": "UKENDT kunde (fx fra et telefonnotat med 'UKENDT nummer'): send kunden en SMS med "
+                           "et link, hvor han selv udfylder navn, adresse, telefon og email. Naar han sender, "
+                           "oprettes han AUTOMATISK som kunde i ordrestyring, og lederen faar besked. Brug "
+                           "denne i stedet for opret_kunde naar adresse/email mangler. Telefonnummer tages "
+                           "fra notatet.",
+            "parameters": {"type": "object", "properties": {
+                "telefon": {"type": "string", "description": "kundens telefonnummer"},
+                "navn": {"type": "string", "description": "kundens navn hvis kendt (udfyldes paa forhaand)"}},
+                "required": ["telefon"]},
         }},
     },
     {
@@ -1705,6 +1768,7 @@ def schemas_for_role(rolle: str):
 
 # Ændrende værktøjer der skal i handlingsloggen (læse-værktøjer logges ikke)
 MUTERENDE = {
+    "send_kundeoplysninger_sms": "kundeoplysninger-sms sendt",
     "opret_kunde": "kunde oprettet", "opdater_kunde": "kunde opdateret",
     "opret_sag": "sag oprettet", "opdater_sag": "sag opdateret",
     "skriv_bemaerkning": "bemærkning skrevet", "afslut_sag": "sag færdigmeldt",

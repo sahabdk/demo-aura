@@ -179,7 +179,8 @@ _SKABELON_NOEGLER = ("skabelon_rykker1_emne", "skabelon_rykker1_tekst",
                      "skabelon_rykker2_emne", "skabelon_rykker2_tekst",
                      "skabelon_rykker3_emne", "skabelon_rykker3_tekst",
                      "skabelon_sms_adresse", "betalingsinfo", "leder_email", "svar_email",
-                     "telefon_mobiler", "telefon_intro", "telefon_svarer", "telefon_private")
+                     "telefon_mobiler", "telefon_intro", "telefon_svarer", "telefon_private",
+                     "skabelon_sms_nykunde")
 
 
 @app.get("/admin/{secret}/skabeloner")
@@ -204,6 +205,9 @@ def admin_skabeloner(secret: str):
     ud["telefon_intro"] = db.get_meta("telefon_intro") or _tn.STD_INTRO
     ud["telefon_svarer"] = db.get_meta("telefon_svarer") or _tn.STD_SVARER
     ud["telefon_private"] = db.get_meta("telefon_private") or ""
+    ud["skabelon_sms_nykunde"] = (db.get_meta("skabelon_sms_nykunde")
+                                  or "Tak for dit opkald til {firma}. Udfyld venligst dine oplysninger her, "
+                                     "så vi kan oprette dig som kunde: {link}")
     ud["telefon_webhook"] = _tn._url("voice") if _tn.TWILIO_SID else "(TWILIO_SID/TWILIO_TOKEN mangler i Railway)"
     return ud
 

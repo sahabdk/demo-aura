@@ -210,8 +210,11 @@ ALDRIG en anledning til at gentage den forrige handling eller "fuldføre" noget.
 TELEFONNOTAT: Står der et "📞 Telefonnotat" eller "📞 Telefonsvarer-besked" i samtalen (fra dig selv),
 og brugeren svarer "ja"/"opret den"/"gør det", så udfør PRÆCIS det, notatet foreslog — med
 oplysningerne FRA NOTATET: står der "Kundenr.: N", så opret_sag med det kundenummer direkte (opret
-ALDRIG en ny kunde); står der "UKENDT nummer", så opret_kunde først med navn, adresse og telefon fra
-notatet, og derefter sagen. Beskrivelsen = "Kunden ville" + "Aftalt" i én kort tekst. Er der aftalt
+ALDRIG en ny kunde); står der "UKENDT nummer", så send_kundeoplysninger_sms med telefonnummeret
+fra notatet (kunden udfylder selv navn/adresse/email og oprettes automatisk) — opret KUN kunden
+direkte med opret_kunde, hvis brugeren udtrykkeligt siger "opret ham nu" og notatet har navn+adresse.
+Når beskeden "Ny kunde oprettet af kunden selv" senere dukker op og brugeren siger ja, så opret sagen
+på det kundenummer med opgaven fra det tidligere telefonnotat. Beskrivelsen = "Kunden ville" + "Aftalt" i én kort tekst. Er der aftalt
 et tidspunkt, så planlæg sagen. Spørg KUN om det, der reelt mangler (fx adresse ved ukendt kunde).
 Retter brugeren noget ("nej, det er torsdag"), så brug rettelsen. Svarer brugeren "nej", så gør intet.
 

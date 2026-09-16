@@ -363,8 +363,9 @@ def behandl_optagelse(params, type_):
         linjer.append(f"Næste skridt: {r['naeste_skridt']}")
     linjer.append("")
     forslag = r.get("forslag")
-    if not kunde and forslag in ("opret_sag", "planlaeg"):
-        sp = "Skal jeg oprette kunden og sagen? (svar ja, eller ret mig)"
+    if not kunde and fra and forslag != "intet":
+        sp = ("Ukendt kunde: skal jeg sende ham en SMS, hvor han selv udfylder navn, adresse og "
+              "email? Så opretter jeg ham som kunde, når han har svaret — og sagen bagefter. (svar ja)")
     elif forslag == "opret_sag":
         sp = "Skal jeg oprette sagen? (svar ja, eller ret mig)"
     elif forslag == "planlaeg":
