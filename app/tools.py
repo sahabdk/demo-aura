@@ -1203,7 +1203,8 @@ def send_kundeoplysninger_sms(args, ctx):
     token = _secrets.token_urlsafe(16)
     db.create_adr_request(token, tlf, navn, "", _retell.NYKUNDE_FELTER)
     link = f"{(_base or '').rstrip('/')}/adr/{token}"
-    firma = os.environ.get("FIRMA_NAVN", "os")
+    import os as _os
+    firma = _os.environ.get("FIRMA_NAVN", "os")
     tekst = (db.get_meta("skabelon_sms_nykunde")
              or "Tak for dit opkald til {firma}. Udfyld venligst dine oplysninger her, så vi kan "
                 "oprette dig som kunde: {link}")
