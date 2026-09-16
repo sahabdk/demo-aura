@@ -1208,10 +1208,16 @@ def send_kundeoplysninger_sms(args, ctx):
              or "Tak for dit opkald til {firma}. Udfyld venligst dine oplysninger her, så vi kan "
                 "oprette dig som kunde: {link}")
     tekst = tekst.replace("{firma}", firma).replace("{link}", link)
+    db.log_handling("", ctx.get("navn") or "", ctx.get("telegram_id"), "kundeoplysninger-sms forsoeg",
+                    f"{navn or ''} {tlf}")
+    print(f"[nykunde-sms] -> {tlf}: {tekst}", flush=True)
     try:
         ret = _retell.send_sms(tlf, tekst, kontekst=f"kundeoplysninger-SMS til {navn or tlf}")
     except Exception as e:
-        return {"fejl": f"SMS kunne ikke sendes: {str(e)[:120]}", "link": link}
+        db.log_handling("", ctx.get("navn") or "", ctx.get("telegram_id"), "kundeoplysninger-sms FEJL",
+                        f"{tlf}: {str(e)[:150]}")
+        return {"fejl": f"SMS'en blev IKKE sendt - GatewayAPI svarede: {str(e)[:150]}. Sig det aerligt. "
+                        f"Link, der kan sendes manuelt: {link}"}
     db.log_handling("", ctx.get("navn") or "", ctx.get("telegram_id"), "kundeoplysninger-sms sendt",
                     f"{navn or ''} {tlf} ({ret})")
     if ret != "sent":
