@@ -1193,13 +1193,13 @@ def send_kundeoplysninger_sms(args, ctx):
         return {"resultat": f"Nummeret tilhoerer allerede kunde {eks.get('customer_number')} "
                             f"({eks.get('customer_name')}) - send IKKE sms, brug det kundenummer.",
                 "kundenummer": eks.get("customer_number")}
-    # dublet-vagt: samme nummer inden for 24 timer
+    # dublet-vagt: samme nummer inden for 24 timer (kun RIGTIGT sendte taeller; 'igen' overstyrer)
     sidste = db.get_meta(f"nykunde_sms_{tlf[-8:]}")
-    if sidste:
+    if sidste and not args.get("gentag"):
         import time as _t
         if _t.time() - float(sidste) < 86400:
-            return {"resultat": "Der er ALLEREDE sendt et link til det nummer i dag. Send ikke igen - "
-                                "kunden faar besked, naar det er udfyldt."}
+            return {"resultat": "Der er ALLEREDE sendt et link til det nummer i dag. Beder brugeren "
+                                "udtrykkeligt om at sende IGEN, saa kald med gentag=true."}
     token = _secrets.token_urlsafe(16)
     db.create_adr_request(token, tlf, navn, "", _retell.NYKUNDE_FELTER)
     link = f"{(_base or '').rstrip('/')}/adr/{token}"
@@ -1212,12 +1212,13 @@ def send_kundeoplysninger_sms(args, ctx):
         ret = _retell.send_sms(tlf, tekst, kontekst=f"kundeoplysninger-SMS til {navn or tlf}")
     except Exception as e:
         return {"fejl": f"SMS kunne ikke sendes: {str(e)[:120]}", "link": link}
-    import time as _t
-    db.set_meta(f"nykunde_sms_{tlf[-8:]}", _t.time())
     db.log_handling("", ctx.get("navn") or "", ctx.get("telegram_id"), "kundeoplysninger-sms sendt",
                     f"{navn or ''} {tlf} ({ret})")
     if ret != "sent":
-        return {"resultat": f"SMS blev ikke sendt ({ret}) - link til kunden: {link}"}
+        return {"resultat": f"SMS'en blev IKKE sendt (aarsag: {ret} - testtilstand eller sms slaaet fra). "
+                            f"Sig det AERLIGT til brugeren, og giv linket, saa det kan sendes manuelt: {link}"}
+    import time as _t
+    db.set_meta(f"nykunde_sms_{tlf[-8:]}", _t.time())
     return {"resultat": f"SMS sendt til {tlf}. Naar kunden har udfyldt, oprettes han automatisk i "
                         "ordrestyring, og du faar besked. Sig det kort - og at sagen kan oprettes derefter."}
 
@@ -1382,7 +1383,8 @@ TOOLS = [
                            "fra notatet.",
             "parameters": {"type": "object", "properties": {
                 "telefon": {"type": "string", "description": "kundens telefonnummer"},
-                "navn": {"type": "string", "description": "kundens navn hvis kendt (udfyldes paa forhaand)"}},
+                "navn": {"type": "string", "description": "kundens navn hvis kendt (udfyldes paa forhaand)"},
+                "gentag": {"type": "boolean", "description": "true naar brugeren beder om at sende linket IGEN"}},
                 "required": ["telefon"]},
         }},
     },
