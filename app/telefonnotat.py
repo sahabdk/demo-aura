@@ -165,7 +165,13 @@ def twiml_indgaaende(form):
         hvisk = f' url="{escape(_url("hvisk") + "?fra=" + quote(fra))}" method="POST"'
     numre = "".join(f"<Number{hvisk}>{m['nummer']}</Number>" for m in mob)
     if db.get_meta("telefon_ringbesked") != "0":
-        threading.Thread(target=_ringer_nu, args=(fra, mob), daemon=True).start()
+        # Foerste linje sendes NU (synkront, ~0.3 s) - saa banneret er paa skaermen, foer
+        # Twilio begynder at ringe mobilen op. Kundekortet fyldes paa bagefter i en traad.
+        try:
+            sendte = _ringer_nu_hurtig(fra, mob)
+            threading.Thread(target=_ringer_nu_detaljer, args=(fra, sendte), daemon=True).start()
+        except Exception as e:
+            print(f"[ringer_nu] fejlede: {str(e)[:120]}", flush=True)
     return (f"<Response>{_say(intro) if intro else ''}"
             f'<Dial timeout="{RING_SEK}"{caller}{optag} action="{_url("efter-dial")}" method="POST">'
             f"{numre}</Dial></Response>")
@@ -246,26 +252,51 @@ def _kundekort_kort(kn):
     return linjer
 
 
-def _ringer_nu(fra, mob):
-    """Telegram til dem der ringes op: hvem det er + kundekort, MENS det ringer."""
+def _ringer_nu_tekst(fra):
     hvem, info = _hvem(fra)
     if info:
         navn = (info.get("kontakt") + " / " if info.get("kontakt") else "") + (info.get("kunde") or "")
-        tekst = f"📞 E · {navn} ringer — {_pn(fra)} (kundenr. {info.get('kn')})"
-        try:
-            ekstra = _kundekort_kort(info.get("kn"))
-            if ekstra:
-                tekst += "\n" + "\n".join(ekstra)
-        except Exception:
-            pass
-    else:
-        tekst = f"📞 E · {hvem.capitalize()} ringer — {_pn(fra)}"
+        return f"📞 E · {navn} ringer — {_pn(fra)} (kundenr. {info.get('kn')})", info
+    return f"📞 E · {hvem.capitalize()} ringer — {_pn(fra)}", None
+
+
+def _ringer_nu_hurtig(fra, mob):
+    """Foerste linje til Telegram med det samme. Returnerer [(chat_id, message_id, tekst, info)]."""
+    tekst, info = _ringer_nu_tekst(fra)
+    sendte = []
     for m in mob:
         if m.get("telegram_id"):
             try:
-                telegram.send_message(m["telegram_id"], tekst)
+                mid = telegram.send_and_get_id(m["telegram_id"], tekst)
+                sendte.append((m["telegram_id"], mid, tekst, info))
             except Exception:
                 pass
+    return sendte
+
+
+def _ringer_nu_detaljer(fra, sendte):
+    """Bagefter (i traad): kundekort haegtes paa den samme besked (redigeres, ingen ny notifikation)."""
+    if not sendte or not sendte[0][3]:
+        return
+    info = sendte[0][3]
+    try:
+        ekstra = _kundekort_kort(info.get("kn"))
+    except Exception:
+        ekstra = []
+    if not ekstra:
+        return
+    for chat_id, mid, tekst, _ in sendte:
+        if not mid:
+            continue
+        try:
+            telegram.edit_message(chat_id, mid, tekst + "\n" + "\n".join(ekstra))
+        except Exception:
+            pass
+
+
+def _ringer_nu(fra, mob):
+    """(bagudkompatibel) foerste linje + detaljer i et hug."""
+    _ringer_nu_detaljer(fra, _ringer_nu_hurtig(fra, mob))
 
 
 def twiml_hvisk(fra):
