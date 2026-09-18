@@ -22,6 +22,7 @@ import os
 import re
 import threading
 import time
+from urllib.parse import quote, urlencode
 from xml.sax.saxutils import escape
 
 import requests
@@ -39,6 +40,9 @@ STD_INTRO = ("Hej, du har ringet til {firma}. Samtalen bliver skrevet ned, så v
              "Vent venligst, mens vi stiller om.")
 STD_SVARER = ("Vi kan desværre ikke tage telefonen lige nu. Læg en besked med dit navn og "
               "hvad det drejer sig om efter tonen, så vender vi tilbage hurtigst muligt.")
+STD_SVARER_OPTAGET = ("Vi taler i telefon lige nu. Læg en besked med dit navn og hvad det drejer "
+                      "sig om efter tonen, så ringer vi tilbage, så snart vi er færdige.")
+STD_INTRO_UD = "Hej, det er {firma}. Samtalen skrives ned, så vi husker aftalen."
 
 
 # ---------- indstillinger ----------
@@ -131,16 +135,192 @@ def twiml_indgaaende(form):
     intro = (db.get_meta("telefon_intro") or STD_INTRO).replace("{firma}", _firma())
     if not mob:
         return twiml_telefonsvarer()
+    # En af vores egne mobiler ringer til Nilas nummer (fx ring-tilbage fra opkaldslisten)
+    if fra and any(_n8(m["nummer"]) == _n8(fra) for m in mob):
+        return (f"<Response>{_say('Hej. Det her er Nilas nummer. Ring kunden op fra notatet i Telegram.')}"
+                "<Hangup/></Response>")
     if fra:
         _AKTIVE_RINGUD[_n8(fra)] = time.time()
     optag = "" if _privat(fra) else (
         f' record="record-from-answer-dual" recordingStatusCallback="{_url("optagelse?type=samtale")}"'
         f' recordingStatusCallbackEvent="completed"')
-    caller = f' callerId="{escape(fra)}"' if fra.startswith("+") else ""
-    numre = "".join(f"<Number>{m['nummer']}</Number>" for m in mob)
+    # Afsender paa ring-ud: 'erhverv' = Nilas eget nummer (gem det som kontakt "E - Erhverv" med egen
+    # ringetone, saa erhverv og privat aldrig forveksles) - 'kunde' = kundens rigtige nummer.
+    til = form.get("To") or ""
+    if til.startswith("+") and db.get_meta("telefon_twilio_nummer") != til:
+        db.set_meta("telefon_twilio_nummer", til)   # huskes til ring-op
+    if (db.get_meta("telefon_visning") or "kunde") == "erhverv" or not fra.startswith("+"):
+        caller = f' callerId="{escape(til)}"' if til.startswith("+") else ""
+    else:
+        caller = f' callerId="{escape(fra)}"'   # standard: kundens rigtige nummer paa skaermen
+    # Hvisk til den der tager den ("Erhverv. Thomas Hansen.") - kunden hoerer det ikke
+    hvisk = ""
+    if db.get_meta("telefon_hvisk") != "0":
+        hvisk = f' url="{escape(_url("hvisk") + "?fra=" + quote(fra))}" method="POST"'
+    numre = "".join(f"<Number{hvisk}>{m['nummer']}</Number>" for m in mob)
+    if db.get_meta("telefon_ringbesked") != "0":
+        threading.Thread(target=_ringer_nu, args=(fra, mob), daemon=True).start()
     return (f"<Response>{_say(intro)}"
             f'<Dial timeout="{RING_SEK}"{caller}{optag} action="{_url("efter-dial")}" method="POST">'
             f"{numre}</Dial></Response>")
+
+
+def _opkalder_info(fra):
+    """Lynopslag i telefon-indekset (ingen API-kald): {kn, kunde, kontakt, adresse} eller None."""
+    try:
+        idx = json.loads(db.get_meta("telefon_indeks") or "{}")
+        return idx.get(_n8(fra)) or None
+    except Exception:
+        return None
+
+
+def _hvem(fra):
+    if not fra or not _n8(fra):
+        return "skjult nummer", None
+    info = _opkalder_info(fra)
+    if not info:
+        return "ukendt nummer", None
+    navn = info.get("kunde") or ""
+    if info.get("kontakt"):
+        return f"{info['kontakt']} fra {navn} (kundenr. {info.get('kn')})", info
+    return f"{navn} (kundenr. {info.get('kn')})", info
+
+
+def _kundekort_kort(kn):
+    """Lyn-overblik over kunden fra cachen (ingen nye API-kald hvis cachen er varm):
+    adresse, aabne sager (med planlagt tid), seneste lukkede sag, forfaldne fakturaer."""
+    from . import ordrestyring as os_api
+    from . import os_graphql as os_gql
+    from datetime import datetime as _dt
+    linjer = []
+    try:
+        d = next((x for x in os_api.all_debtors() if str(x.get("customer_number")) == str(kn)), None) or {}
+        adr = " ".join(x for x in (d.get("customer_address"), str(d.get("customer_postalcode") or ""),
+                                   d.get("customer_city")) if x).strip()
+        if adr:
+            linjer.append(f"📍 {adr}")
+    except Exception:
+        pass
+    try:
+        statusser = {str(s.get("id")): (s.get("text") or "") for s in os_api.case_statuses()}
+        lukket = str(os_api.closed_status_id())
+        plan = {}
+        for p in (os_gql._PLAN_CACHE.get("rows") or []):
+            plan.setdefault(str(p.get("sagsnummer")), p)
+        mine = [c for c in os_api.cases_paged() if str(c.get("customer_number")) == str(kn)]
+        aabne = [c for c in mine if str(c.get("status")) != lukket][:3]
+        lukkede = [c for c in mine if str(c.get("status")) == lukket][:1]
+        for c in aabne:
+            nr = c.get("case_number")
+            besk = (c.get("description") or "").strip().replace("\n", " ")[:50]
+            st = statusser.get(str(c.get("status")), "")
+            p = plan.get(str(nr))
+            tid = ""
+            if p and p.get("startTime"):
+                tid = " · planlagt " + _dt.fromtimestamp(p["startTime"]).strftime("%d/%m kl. %H:%M")
+            linjer.append(f"🔧 Sag {nr} ({st}){tid}: {besk}")
+        for c in lukkede:
+            besk = (c.get("description") or "").strip().replace("\n", " ")[:50]
+            try:
+                dato = _dt.fromtimestamp(int(c.get("created_at") or 0)).strftime("%d/%m-%y")
+            except (ValueError, TypeError, OSError):
+                dato = ""
+            linjer.append(f"✅ Sidst: sag {c.get('case_number')} {dato}: {besk}")
+        if not mine:
+            linjer.append("🔧 Ingen sager i de seneste ~500")
+    except Exception as e:
+        print(f"[ringer_nu] sagsopslag fejlede: {str(e)[:100]}", flush=True)
+    try:
+        forf = [f for f in os_api.overdue_unpaid_invoices()
+                if str(f.get("customer_number") or f.get("debtor_number") or "") == str(kn)]
+        if forf:
+            linjer.append(f"⚠️ {len(forf)} forfalden faktura" + ("er" if len(forf) > 1 else ""))
+    except Exception:
+        pass
+    return linjer
+
+
+def _ringer_nu(fra, mob):
+    """Telegram til dem der ringes op: hvem det er + kundekort, MENS det ringer."""
+    hvem, info = _hvem(fra)
+    if info:
+        navn = (info.get("kontakt") + " / " if info.get("kontakt") else "") + (info.get("kunde") or "")
+        tekst = f"📞 E · {navn} ringer — {_pn(fra)} (kundenr. {info.get('kn')})"
+        try:
+            ekstra = _kundekort_kort(info.get("kn"))
+            if ekstra:
+                tekst += "\n" + "\n".join(ekstra)
+        except Exception:
+            pass
+    else:
+        tekst = f"📞 E · {hvem.capitalize()} ringer — {_pn(fra)}"
+    for m in mob:
+        if m.get("telegram_id"):
+            try:
+                telegram.send_message(m["telegram_id"], tekst)
+            except Exception:
+                pass
+
+
+def twiml_hvisk(fra):
+    """Spilles KUN for den medarbejder der tager roeret, foer kunden kobles paa."""
+    hvem, info = _hvem(fra)
+    if info:
+        navn = info.get("kunde") or ""
+        tekst = f"Erhverv. {info['kontakt'] + ' fra ' if info.get('kontakt') else ''}{navn}."
+    else:
+        tekst = f"Erhverv. {hvem.capitalize()}."
+    return f"<Response>{_say(tekst)}</Response>"
+
+
+# ---------- ring op via Nila (udgaaende med hovednummer som afsender) ----------
+
+def _e164(nr):
+    d = retell._norm_tlf(nr)
+    if len(d) == 8:
+        d = "45" + d
+    return "+" + d if d else ""
+
+
+def ring_op(mobil, til, navn="", kn=""):
+    """Start et udgaaende opkald: Twilio ringer medarbejderens mobil; naar den tages, ringes
+    kunden op (TwiML fra /ringop). Returnerer Twilio-svaret."""
+    twilio_nr = os.environ.get("TWILIO_NUMBER") or db.get_meta("telefon_twilio_nummer") or ""
+    if not twilio_nr:
+        raise RuntimeError("Nilas telefonnummer kendes ikke endnu - ring til Twilio-nummeret en gang "
+                           "foerst (eller saet TWILIO_NUMBER i Railway)")
+    url = _url("ringop") + "?" + urlencode({"til": til, "navn": navn or "", "kn": kn or "",
+                                            "tg": mobil.get("telegram_id") or ""})
+    r = _tw("POST", "Calls.json", data={"To": mobil["nummer"], "From": twilio_nr,
+                                        "Url": url, "Method": "POST", "Timeout": "25"})
+    return r.json()
+
+
+def twiml_ringop(q):
+    """Medarbejderen tog Nilas opkald -> ring kunden op med hovednummeret som afsender."""
+    til = q.get("til") or ""
+    navn = q.get("navn") or ""
+    hoved = _e164(db.get_meta("telefon_hovednummer") or "")
+    twilio_nr = os.environ.get("TWILIO_NUMBER") or db.get_meta("telefon_twilio_nummer") or ""
+    caller = hoved or twilio_nr
+    cb = _url("optagelse") + "?" + urlencode({"type": "udgaaende", "kunde": til,
+                                              "tg": q.get("tg") or ""})
+    intro_kunde = ""
+    tekst = (db.get_meta("telefon_intro_udgaaende") or STD_INTRO_UD).replace("{firma}", _firma()).strip()
+    if tekst:
+        intro_kunde = f' url="{escape(_url("intro-kunde"))}" method="POST"'
+    optag = "" if _privat(til) else (f' record="record-from-answer-dual" recordingStatusCallback="{escape(cb)}"'
+                                     f' recordingStatusCallbackEvent="completed"')
+    return (f"<Response>{_say('Erhverv. Ringer op til ' + (navn or _pn(til)) + '.')}"
+            f'<Dial callerId="{escape(caller)}" timeout="30"{optag}>'
+            f"<Number{intro_kunde}>{escape(til)}</Number></Dial>"
+            f"{_say('Kunden tog den ikke.')}</Response>")
+
+
+def twiml_intro_kunde():
+    """Spilles for KUNDEN naar denne tager Nilas udgaaende opkald (GDPR-oplysning)."""
+    tekst = (db.get_meta("telefon_intro_udgaaende") or STD_INTRO_UD).replace("{firma}", _firma()).strip()
+    return f"<Response>{_say(tekst) if tekst else ''}</Response>"
 
 
 def twiml_efter_dial(form):
@@ -150,11 +330,15 @@ def twiml_efter_dial(form):
     if status == "completed":
         # husk hvem der tog den (child-call'ets nummer slaas op senere)
         return "<Response><Hangup/></Response>"
-    return twiml_telefonsvarer()
+    return twiml_telefonsvarer(optaget=(status == "busy"))
 
 
-def twiml_telefonsvarer():
-    tekst = (db.get_meta("telefon_svarer") or STD_SVARER).replace("{firma}", _firma())
+def twiml_telefonsvarer(optaget=False):
+    if optaget:
+        tekst = (db.get_meta("telefon_svarer_optaget") or STD_SVARER_OPTAGET)
+    else:
+        tekst = (db.get_meta("telefon_svarer") or STD_SVARER)
+    tekst = tekst.replace("{firma}", _firma())
     return (f"<Response>{_say(tekst)}"
             f'<Record maxLength="120" playBeep="true" timeout="5" '
             f'recordingStatusCallback="{_url("optagelse?type=svarer")}" '
@@ -313,7 +497,9 @@ def _resume(udskrift, kunde, type_):
     from .agent import client
     kontekst = (f"Opkalderen er kendt: {kunde['navn']} (kundenr. {kunde['kundenummer']})"
                 if kunde else "Opkalderen er IKKE kendt i systemet.")
-    hvad = "en telefonsvarer-besked fra en kunde" if type_ == "svarer" else "en telefonsamtale mellem firmaet og en kunde"
+    hvad = {"svarer": "en telefonsvarer-besked fra en kunde",
+            "udgaaende": "en telefonsamtale hvor FIRMAET ringede kunden op"}.get(
+                type_, "en telefonsamtale mellem firmaet og en kunde")
     r = client.chat.completions.create(
         model=OPENAI_MODEL,
         response_format={"type": "json_object"},
@@ -360,8 +546,12 @@ def behandl_optagelse(params, type_):
     db.set_meta(f"telefonnotat_{rec_sid}", "1")
 
     opk = _opkald(call_sid)
-    fra = opk.get("from") or params.get("From") or ""
-    besvaret = _besvaret_af(call_sid) if type_ == "samtale" else None
+    if type_ == "udgaaende":
+        fra = params.get("_kunde") or ""          # kundens nummer (vi ringede op)
+        besvaret = next((m for m in mobiler() if str(m.get("telegram_id")) == str(params.get("_tg"))), None)
+    else:
+        fra = opk.get("from") or params.get("From") or ""
+        besvaret = _besvaret_af(call_sid) if type_ == "samtale" else None
 
     try:
         lyd = _hent_lyd(rec_url)
@@ -387,9 +577,11 @@ def behandl_optagelse(params, type_):
     # ---- beskeden ----
     hvem = (f"{kunde['navn']} (kundenr. {kunde['kundenummer']})" if kunde
             else (f"{r.get('navn')} — UKENDT nummer" if r.get("navn") else "ukendt nummer"))
-    titel = ("📞 Telefonsvarer-besked" if type_ == "svarer" else "📞 Telefonnotat — samtale") + f" med {hvem}"
-    linjer = [titel, f"Telefon: {_pn(fra)}" + (f" · {_min_sek(varighed)}" if varighed else "")
-              + (f" · besvaret af {besvaret['navn']}" if besvaret else "")]
+    titel = {"svarer": "📞 Telefonsvarer-besked", "udgaaende": "📞 Telefonnotat — udgående samtale"}.get(
+        type_, "📞 Telefonnotat — samtale") + f" med {hvem}"
+    hvem_tog = (f" · ringet op af {besvaret['navn']}" if (besvaret and type_ == "udgaaende")
+                else (f" · besvaret af {besvaret['navn']}" if besvaret else ""))
+    linjer = [titel, f"Telefon: {_pn(fra)}" + (f" · {_min_sek(varighed)}" if varighed else "") + hvem_tog]
     if kunde:
         linjer.append(f"Kundenr.: {kunde['kundenummer']} (kunden FINDES i ordrestyring"
                       + (f", via kontaktperson {kunde.get('kontakt')}" if kunde.get("kontakt") else "") + ")")

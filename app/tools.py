@@ -1230,6 +1230,74 @@ def send_kundeoplysninger_sms(args, ctx):
                         "ordrestyring, og du faar besked. Sig det kort - og at sagen kan oprettes derefter."}
 
 
+def ring_op(args, ctx):
+    """Ring en kunde op via Nila: Nila ringer FOERST brugerens egen mobil; naar den tages,
+    ringes kunden op med firmaets hovednummer som afsender. Samtalen noteres bagefter."""
+    from . import telefonnotat as tn
+    from . import retell as _retell
+    if not tn.TWILIO_SID:
+        return {"fejl": "telefon er ikke sat op (TWILIO_SID mangler)"}
+    mig = next((m for m in tn.mobiler() if str(m.get("telegram_id")) == str(ctx["telegram_id"])), None)
+    if not mig:
+        return {"resultat": "Din mobil staar ikke paa telefon-listen (Pilly -> Telefonnotat -> Mobiler) "
+                            "med dit telegram-id, saa jeg kan ikke ringe dig op. Sig det til lederen."}
+    tlf = (args.get("telefon") or "").strip()
+    navn = (args.get("navn") or "").strip()
+    kn = str(args.get("customer_number") or "").strip()
+    # sagsnummer -> kunde
+    if not kn and not tlf and args.get("sagsnummer"):
+        try:
+            c = os_api.get_case(args["sagsnummer"]) or {}
+            kn = str(c.get("customer_number") or "")
+        except Exception:
+            pass
+    # kundenavn -> kunde (fuzzy)
+    if not kn and not tlf and args.get("kunde"):
+        hits = fuzzy_find_customers(str(args["kunde"]), limit=3, with_scores=True)
+        staerke = [(s, d) for s, d in hits if s >= 0.85]
+        if len(staerke) == 1 or (len(staerke) > 1 and staerke[0][0] >= staerke[1][0] + 0.08):
+            kn = str(staerke[0][1].get("customer_number"))
+        elif hits:
+            return {"resultat": "Flere kunder matcher - spoerg hvilken (kun en gang).",
+                    "kandidater": [{"customer_number": d.get("customer_number"), "navn": d.get("customer_name"),
+                                    "telefon": d.get("customer_mobile") or d.get("customer_telephone")}
+                                   for s, d in hits]}
+        else:
+            return {"resultat": f"Ingen kunde matcher '{args['kunde']}'. Sig nummeret i stedet."}
+    if kn and not tlf:
+        try:
+            d = os_api.get_debtor(kn) or {}
+        except Exception:
+            d = {}
+        navn = navn or d.get("customer_name") or ""
+        for k in ("customer_mobile", "customer_telephone"):
+            if d.get(k):
+                tlf = str(d[k])
+                break
+        if not tlf:
+            try:
+                for c in os_api.debtor_contacts(kn):
+                    if c.get("mobile") or c.get("telephone"):
+                        tlf = str(c.get("mobile") or c.get("telephone"))
+                        navn = f"{c.get('name')} ({navn})" if c.get("name") and navn else (c.get("name") or navn)
+                        break
+            except Exception:
+                pass
+    if not tlf:
+        return {"resultat": "Der staar intet telefonnummer paa kunden. Sig nummeret, saa ringer jeg op."}
+    til = tn._e164(tlf)
+    if len(til) < 11:
+        return {"fejl": f"ugyldigt telefonnummer: {tlf}"}
+    try:
+        tn.ring_op(mig, til, navn, kn)
+    except Exception as e:
+        return {"fejl": f"kunne ikke starte opkaldet: {str(e)[:150]}"}
+    db.log_handling("", ctx.get("navn") or "", ctx.get("telegram_id"), "ring-op startet",
+                    f"{navn or ''} {til} via {mig['navn']}")
+    return {"resultat": f"Jeg ringer din mobil op nu. Tag den, saa ringer jeg {navn or til} op fra "
+                        "hovednummeret. Samtalen bliver noteret bagefter. Svar KORT - kun det."}
+
+
 def besked_til_leder(args, ctx):
     """Send en kort besked til lederen i Telegram (medarbejder-oensker, anmodninger m.m.)."""
     tekst = (args.get("besked") or "").strip()
@@ -1377,6 +1445,21 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": ring_op, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "ring_op",
+            "description": "Ring en kunde op VIA NILA ('ring til Hansen', 'ring ham op', 'ring til kunden paa "
+                           "sag 142', 'ring til 20 12 34 56'). Nila ringer foerst brugerens egen mobil op; "
+                           "naar den tages, ringes kunden op med firmaets hovednummer som afsender, og "
+                           "samtalen noteres. Angiv kunde (navn) ELLER customer_number ELLER sagsnummer "
+                           "ELLER telefon. Efter et telefonnotat: brug telefonnummeret fra notatet.",
+            "parameters": {"type": "object", "properties": {
+                "kunde": {"type": "string"}, "customer_number": {"type": "string"},
+                "sagsnummer": {"type": "string"}, "telefon": {"type": "string"},
+                "navn": {"type": "string", "description": "navn der siges til brugeren"}}},
         }},
     },
     {
@@ -1777,6 +1860,7 @@ def schemas_for_role(rolle: str):
 
 # Ændrende værktøjer der skal i handlingsloggen (læse-værktøjer logges ikke)
 MUTERENDE = {
+    "ring_op": "opkald startet",
     "send_kundeoplysninger_sms": "kundeoplysninger-sms sendt",
     "opret_kunde": "kunde oprettet", "opdater_kunde": "kunde opdateret",
     "opret_sag": "sag oprettet", "opdater_sag": "sag opdateret",

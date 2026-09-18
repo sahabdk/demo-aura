@@ -180,7 +180,9 @@ _SKABELON_NOEGLER = ("skabelon_rykker1_emne", "skabelon_rykker1_tekst",
                      "skabelon_rykker3_emne", "skabelon_rykker3_tekst",
                      "skabelon_sms_adresse", "betalingsinfo", "leder_email", "svar_email",
                      "telefon_mobiler", "telefon_intro", "telefon_svarer", "telefon_private",
-                     "telefon_tilstand", "skabelon_sms_nykunde")
+                     "telefon_tilstand", "telefon_visning", "telefon_hvisk", "telefon_ringbesked",
+                     "telefon_svarer_optaget", "telefon_hovednummer", "telefon_intro_udgaaende",
+                     "skabelon_sms_nykunde")
 
 
 @app.get("/admin/{secret}/skabeloner")
@@ -204,8 +206,14 @@ def admin_skabeloner(secret: str):
     ud["telefon_mobiler"] = db.get_meta("telefon_mobiler") or ""
     ud["telefon_intro"] = db.get_meta("telefon_intro") or _tn.STD_INTRO
     ud["telefon_svarer"] = db.get_meta("telefon_svarer") or _tn.STD_SVARER
+    ud["telefon_svarer_optaget"] = db.get_meta("telefon_svarer_optaget") or _tn.STD_SVARER_OPTAGET
+    ud["telefon_hovednummer"] = db.get_meta("telefon_hovednummer") or ""
+    ud["telefon_intro_udgaaende"] = db.get_meta("telefon_intro_udgaaende") or _tn.STD_INTRO_UD
     ud["telefon_private"] = db.get_meta("telefon_private") or ""
     ud["telefon_tilstand"] = db.get_meta("telefon_tilstand") or "medlyt"
+    ud["telefon_visning"] = db.get_meta("telefon_visning") or "kunde"
+    ud["telefon_hvisk"] = db.get_meta("telefon_hvisk") or "1"
+    ud["telefon_ringbesked"] = db.get_meta("telefon_ringbesked") or "1"
     ud["skabelon_sms_nykunde"] = (db.get_meta("skabelon_sms_nykunde")
                                   or "Tak for dit opkald til {firma}. Udfyld venligst dine oplysninger her, "
                                      "så vi kan oprette dig som kunde: {link}")
@@ -431,6 +439,15 @@ async def twilio_efter_dial(secret: str, request: Request):
     return _twiml(telefonnotat.twiml_efter_dial(form))
 
 
+@app.post("/twilio/{secret}/hvisk")
+async def twilio_hvisk(secret: str, request: Request, fra: str = ""):
+    """Hvisk til medarbejderen der tager roeret: 'Erhverv. Thomas Hansen.'"""
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    from . import telefonnotat
+    return _twiml(telefonnotat.twiml_hvisk(fra))
+
+
 @app.post("/twilio/{secret}/efter-svarer")
 async def twilio_efter_svarer(secret: str, request: Request):
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
@@ -440,7 +457,8 @@ async def twilio_efter_svarer(secret: str, request: Request):
 
 
 @app.post("/twilio/{secret}/optagelse")
-async def twilio_optagelse(secret: str, request: Request, type: str = "samtale"):
+async def twilio_optagelse(secret: str, request: Request, type: str = "samtale",
+                           kunde: str = "", tg: str = ""):
     """Optagelsen er klar -> udskrift, kundematch, resume, Telegram (i baggrunden)."""
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
         raise HTTPException(403, "forkert token")
@@ -448,8 +466,28 @@ async def twilio_optagelse(secret: str, request: Request, type: str = "samtale")
     form = dict(await request.form())
     if (form.get("RecordingStatus") or "completed") != "completed":
         return {"ok": True}
-    telefonnotat.start_behandling(form, "svarer" if type == "svarer" else "samtale")
+    form["_kunde"], form["_tg"] = kunde, tg
+    typ = type if type in ("svarer", "udgaaende") else "samtale"
+    telefonnotat.start_behandling(form, typ)
     return {"ok": True}
+
+
+@app.post("/twilio/{secret}/ringop")
+async def twilio_ringop(secret: str, request: Request, til: str = "", navn: str = "",
+                        kn: str = "", tg: str = ""):
+    """Medarbejderen tog Nilas opkald -> ring kunden op (hovednummer som afsender)."""
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    from . import telefonnotat
+    return _twiml(telefonnotat.twiml_ringop({"til": til, "navn": navn, "kn": kn, "tg": tg}))
+
+
+@app.post("/twilio/{secret}/intro-kunde")
+async def twilio_intro_kunde(secret: str, request: Request):
+    if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
+        raise HTTPException(403, "forkert token")
+    from . import telefonnotat
+    return _twiml(telefonnotat.twiml_intro_kunde())
 
 
 # ---------- Retell-telefonagent + adresse-portal ----------
