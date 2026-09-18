@@ -84,6 +84,11 @@ def send_and_get_id(chat_id, text: str):
         return None
 
 
+def delete_message(chat_id, message_id):
+    """Slet en af bottens egne beskeder (fx et 'ringer nu'-banner naar notatet er landet)."""
+    requests.post(f"{API}/deleteMessage", json={"chat_id": chat_id, "message_id": message_id}, timeout=15)
+
+
 def pin_message(chat_id, message_id):
     requests.post(f"{API}/pinChatMessage", json={
         "chat_id": chat_id, "message_id": message_id, "disable_notification": True,

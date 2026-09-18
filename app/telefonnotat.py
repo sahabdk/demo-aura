@@ -174,6 +174,7 @@ def twiml_indgaaende(form):
         # Twilio begynder at ringe mobilen op. Kundekortet fyldes paa bagefter i en traad.
         try:
             sendte = _ringer_nu_hurtig(fra, mob)
+            _banner_husk(fra, sendte)
             threading.Thread(target=_ringer_nu_detaljer, args=(fra, sendte), daemon=True).start()
         except Exception as e:
             print(f"[ringer_nu] fejlede: {str(e)[:120]}", flush=True)
@@ -325,6 +326,28 @@ def _kundekort_kort(kn, kun_cache=False):
     except Exception:
         pass
     return linjer
+
+
+_BANNERE = {}   # 8 cifre -> [(chat_id, message_id)] for 'ringer nu'-bannere, slettes naar notatet lander
+
+
+def _banner_husk(fra, sendte):
+    ids = [(c, m) for c, m, _, _ in (sendte or []) if m]
+    if ids:
+        _BANNERE[_n8(fra)] = {"ts": time.time(), "ids": ids}
+    # ryd gamle (over 2 timer) saa dict'en ikke vokser
+    for k, v in list(_BANNERE.items()):
+        if time.time() - v["ts"] > 7200:
+            _BANNERE.pop(k, None)
+
+
+def _banner_slet(fra):
+    b = _BANNERE.pop(_n8(fra), None)
+    for c, m in (b or {}).get("ids", []):
+        try:
+            telegram.delete_message(c, m)
+        except Exception:
+            pass
 
 
 def _ringer_nu_tekst(fra):
@@ -815,6 +838,7 @@ def behandl_optagelse(params, type_):
             db.save_message(m, "assistant", besked)   # saa "ja, opret den" forstaas bagefter
         except Exception:
             pass
+    _banner_slet(fra)   # 'ringer nu'-banneret har gjort sit arbejde - vaek med det
     db.log_handling("", "Aura (telefon)", "system", "telefonnotat sendt",
                     f"{hvem} · {_pn(fra)} · {type_}" + (f" · {besvaret['navn']}" if besvaret else ""))
     # udskriften gemmes kortvarigt, saa 'vis hele samtalen' er muligt
