@@ -204,11 +204,13 @@ def admin_skabeloner(secret: str):
     ud["svar_email"] = db.get_meta("svar_email") or os.environ.get("EMAIL_REPLY_TO", "")
     from . import telefonnotat as _tn
     ud["telefon_mobiler"] = db.get_meta("telefon_mobiler") or ""
-    ud["telefon_intro"] = db.get_meta("telefon_intro") or _tn.STD_INTRO
+    _v = db.get_meta("telefon_intro")
+    ud["telefon_intro"] = _tn.STD_INTRO if _v is None else _v
     ud["telefon_svarer"] = db.get_meta("telefon_svarer") or _tn.STD_SVARER
     ud["telefon_svarer_optaget"] = db.get_meta("telefon_svarer_optaget") or _tn.STD_SVARER_OPTAGET
     ud["telefon_hovednummer"] = db.get_meta("telefon_hovednummer") or ""
-    ud["telefon_intro_udgaaende"] = db.get_meta("telefon_intro_udgaaende") or _tn.STD_INTRO_UD
+    _v = db.get_meta("telefon_intro_udgaaende")
+    ud["telefon_intro_udgaaende"] = _tn.STD_INTRO_UD if _v is None else _v
     ud["telefon_private"] = db.get_meta("telefon_private") or ""
     ud["telefon_tilstand"] = db.get_meta("telefon_tilstand") or "medlyt"
     ud["telefon_visning"] = db.get_meta("telefon_visning") or "kunde"

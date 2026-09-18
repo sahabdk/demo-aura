@@ -51,6 +51,12 @@ def _firma():
     return os.environ.get("FIRMA_NAVN", "Aura")
 
 
+def tekst(noegle, standard):
+    """Redigerbar tekst: aldrig sat -> standard; sat til TOM -> tom (= slaaet fra)."""
+    v = db.get_meta(noegle)
+    return (standard if v is None else v).replace("{firma}", _firma()).strip()
+
+
 def mobiler():
     """[{navn, nummer(+45...), telegram_id}] fra meta 'telefon_mobiler'."""
     ud = []
@@ -132,7 +138,7 @@ def twiml_indgaaende(form):
     # 'kun ubesvarede'-tilstand (*61*): hovednummeret er allerede ringet - gaa direkte til svarer
     if db.get_meta("telefon_tilstand") == "svarer":
         return twiml_telefonsvarer()
-    intro = (db.get_meta("telefon_intro") or STD_INTRO).replace("{firma}", _firma())
+    intro = tekst("telefon_intro", STD_INTRO)   # tom = ingen besked, stil om med det samme
     if not mob:
         return twiml_telefonsvarer()
     # En af vores egne mobiler ringer til Nilas nummer (fx ring-tilbage fra opkaldslisten)
@@ -160,7 +166,7 @@ def twiml_indgaaende(form):
     numre = "".join(f"<Number{hvisk}>{m['nummer']}</Number>" for m in mob)
     if db.get_meta("telefon_ringbesked") != "0":
         threading.Thread(target=_ringer_nu, args=(fra, mob), daemon=True).start()
-    return (f"<Response>{_say(intro)}"
+    return (f"<Response>{_say(intro) if intro else ''}"
             f'<Dial timeout="{RING_SEK}"{caller}{optag} action="{_url("efter-dial")}" method="POST">'
             f"{numre}</Dial></Response>")
 
@@ -306,8 +312,7 @@ def twiml_ringop(q):
     cb = _url("optagelse") + "?" + urlencode({"type": "udgaaende", "kunde": til,
                                               "tg": q.get("tg") or ""})
     intro_kunde = ""
-    tekst = (db.get_meta("telefon_intro_udgaaende") or STD_INTRO_UD).replace("{firma}", _firma()).strip()
-    if tekst:
+    if tekst("telefon_intro_udgaaende", STD_INTRO_UD):
         intro_kunde = f' url="{escape(_url("intro-kunde"))}" method="POST"'
     optag = "" if _privat(til) else (f' record="record-from-answer-dual" recordingStatusCallback="{escape(cb)}"'
                                      f' recordingStatusCallbackEvent="completed"')
@@ -319,8 +324,8 @@ def twiml_ringop(q):
 
 def twiml_intro_kunde():
     """Spilles for KUNDEN naar denne tager Nilas udgaaende opkald (GDPR-oplysning)."""
-    tekst = (db.get_meta("telefon_intro_udgaaende") or STD_INTRO_UD).replace("{firma}", _firma()).strip()
-    return f"<Response>{_say(tekst) if tekst else ''}</Response>"
+    t = tekst("telefon_intro_udgaaende", STD_INTRO_UD)
+    return f"<Response>{_say(t) if t else ''}</Response>"
 
 
 def twiml_efter_dial(form):
