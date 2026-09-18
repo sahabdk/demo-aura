@@ -12,12 +12,16 @@ FILE_API = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}"
 _client = OpenAI(api_key=OPENAI_API_KEY)
 
 
-def send_message(chat_id, text: str, reply_to=None):
+def send_message(chat_id, text: str, reply_to=None, parse_mode=None):
     params = {"chat_id": chat_id, "text": text}
     if reply_to:
         params["reply_to_message_id"] = reply_to
         params["allow_sending_without_reply"] = True
-    requests.get(f"{API}/sendMessage", params=params, timeout=30)
+    if parse_mode:
+        params["parse_mode"] = parse_mode   # fx "HTML" -> <b>fed</b>
+    r = requests.post(f"{API}/sendMessage", json=params, timeout=30)
+    if parse_mode and not r.ok:
+        raise RuntimeError(f"Telegram {r.status_code}: {r.text[:120]}")   # kalderen falder tilbage til ren tekst
 
 
 def send_leader(chat_id, text: str):

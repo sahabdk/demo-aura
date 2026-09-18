@@ -89,6 +89,11 @@ def _say(tekst):
     return f'<Say language="da-DK" voice="{STEMME}">{escape(tekst)}</Say>'
 
 
+def _h(s):
+    """HTML-escape til Telegram (parse_mode=HTML): &, <, > i kundens tekst maa ikke tolkes som tags."""
+    return str(s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 # ---------- TwiML (det Twilio skal goere) ----------
 
 _AKTIVE_RINGUD = {}   # {8 cifre (kundens nummer): tidspunkt} - opkald vi lige nu ringer videre
@@ -161,7 +166,7 @@ def twiml_indgaaende(form):
         caller = f' callerId="{escape(fra)}"'   # standard: kundens rigtige nummer paa skaermen
     # Hvisk til den der tager den ("Erhverv. Thomas Hansen.") - kunden hoerer det ikke
     hvisk = ""
-    if db.get_meta("telefon_hvisk") != "0":
+    if db.get_meta("telefon_hvisk") == "1":   # standard FRA: at tage roeret skal foeles som altid
         hvisk = f' url="{escape(_url("hvisk") + "?fra=" + quote(fra))}" method="POST"'
     numre = "".join(f"<Number{hvisk}>{m['nummer']}</Number>" for m in mob)
     if db.get_meta("telefon_ringbesked") != "0":
@@ -708,28 +713,15 @@ def behandl_optagelse(params, type_):
                                  f"📞 Opkald fra {_pn(fra)} — kunne ikke skrive samtalen ud ({str(e)[:100]}).")
             return
     if not _reel_samtale(udskrift, sek):
-        # Kort/tomt opkald: ingen analyse, men EN linje i Telegram - et kort opkald er en kunde der proevede
+        # Kort/tomt opkald: INGEN besked i Telegram (banneret har allerede vist hvem der ringede).
+        # Gemmes kun i Opkald-loggen, saa det kan ses i Pilly.
         print(f"[telefonnotat] tom optagelse fra {fra}", flush=True)
         db.log_handling("", "Aura (telefon)", "system", "telefonnotat tomt", f"{_pn(fra)} ({type_})")
-        hvem_k, _ = _hvem(fra)
-        kort = (f"📞 Kort opkald fra {_pn(fra)} ({hvem_k}) — {_min_sek(varighed) or 'få sek.'}, "
-                + ("ingen besked lagt." if type_ == "svarer" else "ingen reel samtale.")
-                + (f" Hørt: \"{udskrift[:120]}\"" if udskrift.strip() else ""))
         try:
             db.gem_telefonsamtale(type_, retell._norm_tlf(fra), "", "", (besvaret or {}).get("navn") or "",
-                                  int(varighed or 0), udskrift, "{}", kort)
+                                  int(varighed or 0), udskrift, "{}", "(kort opkald - ingen reel samtale)")
         except Exception:
             pass
-        modt = [besvaret["telegram_id"]] if (besvaret and besvaret.get("telegram_id")) else []
-        if LEADER_GROUP_CHAT_ID:
-            modt.append(LEADER_GROUP_CHAT_ID)
-        else:
-            modt += [u["telegram_id"] for u in db.all_users() if u.get("rolle") == "pro"]
-        for m in dict.fromkeys(str(x) for x in modt):
-            try:
-                telegram.send_message(m, kort)
-            except Exception:
-                pass
         return
 
     kunde = _find_kunde(fra) if fra else None
@@ -743,30 +735,32 @@ def behandl_optagelse(params, type_):
         db.log_handling("", "Aura (telefon)", "system", "telefonnotat tomt", f"{_pn(fra)} ({type_})")
         return
 
-    # ---- beskeden ----
+    # ---- beskeden (HTML til Telegram = fed skrift; ren tekst gemmes til Auras hukommelse) ----
     hvem = (f"{kunde['navn']} (kundenr. {kunde['kundenummer']})" if kunde
             else (f"{r.get('navn')} — UKENDT nummer" if r.get("navn") else "ukendt nummer"))
-    titel = {"svarer": "📞 Telefonsvarer-besked", "udgaaende": "📞 Telefonnotat — udgående samtale"}.get(
-        type_, "📞 Telefonnotat — samtale") + f" med {hvem}"
+    titel = {"svarer": "📞 Telefonsvarer-besked", "udgaaende": "📞 Telefonnotat (udgående)"}.get(
+        type_, "📞 Telefonnotat") + f" — {hvem}"
     hvem_tog = (f" · ringet op af {besvaret['navn']}" if (besvaret and type_ == "udgaaende")
                 else (f" · besvaret af {besvaret['navn']}" if besvaret else ""))
-    linjer = [titel, f"Telefon: {_pn(fra)}" + (f" · {_min_sek(varighed)}" if varighed else "") + hvem_tog]
+    # (label, tekst) - label vises FED i Telegram; tom label = almindelig linje
+    dele = [("", f"<b>{_h(titel)}</b>"),
+            ("", "☎️ " + _pn(fra) + (f" · {_min_sek(varighed)}" if varighed else "") + hvem_tog)]
     if kunde:
-        linjer.append(f"Kundenr.: {kunde['kundenummer']} (kunden FINDES i ordrestyring"
-                      + (f", via kontaktperson {kunde.get('kontakt')}" if kunde.get("kontakt") else "") + ")")
+        dele.append(("", f"🧾 Kundenr.: {kunde['kundenummer']} (findes i ordrestyring"
+                         + (f", kontakt: {kunde.get('kontakt')}" if kunde.get("kontakt") else "") + ")"))
         if kunde.get("adresse"):
-            linjer.append(f"Adresse: {kunde['adresse']}")
+            dele.append(("", f"📍 {kunde['adresse']}"))
     if r.get("adresse"):
-        linjer.append(f"Adresse (nævnt i samtalen): {r['adresse']}")
+        dele.append(("", f"📍 Nævnt i samtalen: {r['adresse']}"))
     if r.get("telefon_naevnt"):
-        linjer.append(f"Andet nummer nævnt: {r['telefon_naevnt']}")
-    linjer.append("")
-    linjer.append(f"Kunden ville: {r.get('aerinde') or '(uklart)'}")
+        dele.append(("", f"📱 Andet nummer nævnt: {r['telefon_naevnt']}"))
+    dele.append(("", ""))
+    dele.append(("🗣 Kunden ville:", r.get("aerinde") or "(uklart)"))
     if r.get("aftalt"):
-        linjer.append(f"Aftalt: {r['aftalt']}")
+        dele.append(("🤝 Aftalt:", r["aftalt"]))
     if r.get("naeste_skridt"):
-        linjer.append(f"Næste skridt: {r['naeste_skridt']}")
-    linjer.append("")
+        dele.append(("➡️ Næste skridt:", r["naeste_skridt"]))
+    dele.append(("", ""))
     forslag = r.get("forslag")
     if not kunde and fra and forslag != "intet":
         sp = ("Ukendt kunde: skal jeg sende ham en SMS, hvor han selv udfylder navn, adresse og "
@@ -781,9 +775,21 @@ def behandl_optagelse(params, type_):
         sp = "Skal jeg lave en påmindelse om at ringe tilbage? (svar ja + tidspunkt)"
     else:
         sp = "Skal jeg gøre noget med det? (opret sag / SMS / påmindelse — eller 'nej')"
-    linjer.append("→ " + sp)
-    linjer.append("(skriv 'vis samtalen' for hele udskriften)")
-    besked = "\n".join(linjer)
+    dele.append(("", "❓ " + sp))
+    # To versioner: HTML (fed skrift) til Telegram, ren tekst til hukommelse/dashboard
+    html_linjer, plain_linjer = [], []
+    for label, tekst_ in dele:
+        if label:
+            html_linjer.append(f"<b>{_h(label)}</b> {_h(tekst_)}")
+            plain_linjer.append(f"{label} {tekst_}")
+        elif tekst_.startswith("<b>"):
+            html_linjer.append(tekst_)
+            plain_linjer.append(titel)
+        else:
+            html_linjer.append(_h(tekst_))
+            plain_linjer.append(tekst_)
+    besked_html = "\n".join(html_linjer)
+    besked = "\n".join(plain_linjer)
     try:
         db.gem_telefonsamtale(type_, retell._norm_tlf(fra), (kunde or {}).get("kundenummer") or "",
                               (kunde or {}).get("navn") or r.get("navn") or "",
@@ -802,7 +808,10 @@ def behandl_optagelse(params, type_):
         modtagere += [u["telegram_id"] for u in db.all_users() if u.get("rolle") == "pro"]
     for m in dict.fromkeys(str(x) for x in modtagere):
         try:
-            telegram.send_message(m, besked)
+            try:
+                telegram.send_message(m, besked_html, parse_mode="HTML")
+            except Exception:
+                telegram.send_message(m, besked)
             db.save_message(m, "assistant", besked)   # saa "ja, opret den" forstaas bagefter
         except Exception:
             pass

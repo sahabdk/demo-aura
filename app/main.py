@@ -215,7 +215,7 @@ def admin_skabeloner(secret: str):
     ud["telefon_private"] = db.get_meta("telefon_private") or ""
     ud["telefon_tilstand"] = db.get_meta("telefon_tilstand") or "medlyt"
     ud["telefon_visning"] = db.get_meta("telefon_visning") or "kunde"
-    ud["telefon_hvisk"] = db.get_meta("telefon_hvisk") or "1"
+    ud["telefon_hvisk"] = db.get_meta("telefon_hvisk") or "0"
     ud["telefon_ringbesked"] = db.get_meta("telefon_ringbesked") or "1"
     ud["skabelon_sms_nykunde"] = (db.get_meta("skabelon_sms_nykunde")
                                   or "Tak for dit opkald til {firma}. Udfyld venligst dine oplysninger her, "
