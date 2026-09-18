@@ -81,15 +81,58 @@ def _say(tekst):
 
 # ---------- TwiML (det Twilio skal goere) ----------
 
+_AKTIVE_RINGUD = {}   # {8 cifre (kundens nummer): tidspunkt} - opkald vi lige nu ringer videre
+
+
+def _n8(nr):
+    return retell._norm_tlf(nr)[-8:]
+
+
+def _loekke(form, mob):
+    """Er dette vores EGET ring-ud, der er blevet viderestillet tilbage til Twilio?
+    (Sker hvis hovednummeret baade er viderestillet OG staar som modtager.)"""
+    fra = _n8(form.get("From") or "")
+    nu = time.time()
+    for k, t in list(_AKTIVE_RINGUD.items()):
+        if nu - t > 90:
+            _AKTIVE_RINGUD.pop(k, None)
+    if fra and fra in _AKTIVE_RINGUD:
+        return True
+    # netvaerk der saetter afsender = det viderestillede nummer
+    if _AKTIVE_RINGUD and any(_n8(m["nummer"]) == fra for m in mob):
+        return True
+    return False
+
+
 def twiml_indgaaende(form):
     """Foerste svar naar telefonen ringer: intro + ring ud til mobilerne (med optagelse)."""
     fra = form.get("From") or ""
     if not db.funktion_til("telefonnotat"):
         return f"<Response>{_say(STD_SVARER)}<Record maxLength=\"120\" playBeep=\"true\"/></Response>"
     mob = mobiler()
+    if _loekke(form, mob):
+        # afvis DENNE gren som optaget -> det oprindelige Dial faar 'busy' -> telefonsvarer
+        db.log_handling("", "Aura (telefon)", "system", "viderestillings-loekke",
+                        f"{_pn(fra)}: ring-ud kom retur til Twilio - hovednummer er baade "
+                        "viderestillet og modtager")
+        if not db.get_meta("telefon_loekke_advaret"):
+            db.set_meta("telefon_loekke_advaret", "1")
+            try:
+                telegram.send_leader(LEADER_GROUP_CHAT_ID,
+                    "⚠️ Telefon: ring-ud til hovednummeret løber i ring (nummeret er både viderestillet "
+                    "til Nila og sat som modtager). Kunden fik telefonsvareren. Brug et andet "
+                    "modtagernummer (fx telefonens 2. nummer) eller skift til 'kun ubesvarede'.")
+            except Exception:
+                pass
+        return '<Response><Reject reason="busy"/></Response>'
+    # 'kun ubesvarede'-tilstand (*61*): hovednummeret er allerede ringet - gaa direkte til svarer
+    if db.get_meta("telefon_tilstand") == "svarer":
+        return twiml_telefonsvarer()
     intro = (db.get_meta("telefon_intro") or STD_INTRO).replace("{firma}", _firma())
     if not mob:
         return twiml_telefonsvarer()
+    if fra:
+        _AKTIVE_RINGUD[_n8(fra)] = time.time()
     optag = "" if _privat(fra) else (
         f' record="record-from-answer-dual" recordingStatusCallback="{_url("optagelse?type=samtale")}"'
         f' recordingStatusCallbackEvent="completed"')
@@ -102,6 +145,7 @@ def twiml_indgaaende(form):
 
 def twiml_efter_dial(form):
     """Efter ring-ud: blev der talt sammen -> laeg paa. Ellers telefonsvarer."""
+    _AKTIVE_RINGUD.pop(_n8(form.get("From") or ""), None)
     status = (form.get("DialCallStatus") or "").lower()
     if status == "completed":
         # husk hvem der tog den (child-call'ets nummer slaas op senere)
