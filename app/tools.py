@@ -1298,6 +1298,23 @@ def ring_op(args, ctx):
                         "hovednummeret. Samtalen bliver noteret bagefter. Svar KORT - kun det."}
 
 
+def vis_telefonsamtale(args, ctx):
+    """Hele udskriften af en telefonsamtale (seneste, eller for en bestemt kunde/nummer)."""
+    from . import retell as _retell
+    tlf = _retell._norm_tlf(args.get("telefon") or "") or None
+    rows = db.telefonsamtaler_seneste(3, telefon=tlf, kunde=(args.get("kunde") or None))
+    if not rows:
+        return {"resultat": "Jeg har ingen gemte telefonsamtaler, der matcher."}
+    r = rows[0]
+    typ = {"svarer": "telefonsvarer-besked", "udgaaende": "udgående samtale"}.get(r.get("type"), "samtale")
+    hoved = (f"{typ} {r['ts'][:16].replace('T', ' ')} med {r.get('kunde') or 'ukendt'} "
+             f"({r.get('telefon')})" + (f", {r['medarbejder']}" if r.get("medarbejder") else ""))
+    return {"samtale": hoved, "udskrift": (r.get("udskrift") or "")[:3500],
+            "tip": "Gengiv udskriften ORDRET og komplet (ikke et resume) - det er det brugeren beder om. "
+                   "Er den lang, saa i afsnit. Findes der flere samtaler, naevn at der er "
+                   f"{len(rows)} og at brugeren kan bede om en bestemt dato."}
+
+
 def besked_til_leder(args, ctx):
     """Send en kort besked til lederen i Telegram (medarbejder-oensker, anmodninger m.m.)."""
     tekst = (args.get("besked") or "").strip()
@@ -1445,6 +1462,16 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": vis_telefonsamtale, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "vis_telefonsamtale",
+            "description": "Vis HELE udskriften af en telefonsamtale ('vis samtalen', 'hvad sagde Thomas i "
+                           "telefonen', 'vis samtalen med 23 33 36 97'). Uden argumenter = den seneste samtale.",
+            "parameters": {"type": "object", "properties": {
+                "kunde": {"type": "string"}, "telefon": {"type": "string"}}},
         }},
     },
     {

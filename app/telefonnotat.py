@@ -569,8 +569,28 @@ def behandl_optagelse(params, type_):
                              f"📞 Opkald fra {_pn(fra)} — kunne ikke skrive samtalen ud ({str(e)[:100]}).")
         return
     if len(udskrift) < 15:
-        print(f"[telefonnotat] tom optagelse fra {fra} ignoreret", flush=True)
+        # Kort/tomt opkald: ingen analyse, men EN linje i Telegram - et kort opkald er en kunde der proevede
+        print(f"[telefonnotat] tom optagelse fra {fra}", flush=True)
         db.log_handling("", "Aura (telefon)", "system", "telefonnotat tomt", f"{_pn(fra)} ({type_})")
+        hvem_k, _ = _hvem(fra)
+        kort = (f"📞 Kort opkald fra {_pn(fra)} ({hvem_k}) — {_min_sek(varighed) or 'få sek.'}, "
+                + ("ingen besked lagt." if type_ == "svarer" else "intet sagt.")
+                + (f" Udskrift: \"{udskrift}\"" if udskrift.strip() else ""))
+        try:
+            db.gem_telefonsamtale(type_, retell._norm_tlf(fra), "", "", (besvaret or {}).get("navn") or "",
+                                  int(varighed or 0), udskrift, "{}", kort)
+        except Exception:
+            pass
+        modt = [besvaret["telegram_id"]] if (besvaret and besvaret.get("telegram_id")) else []
+        if LEADER_GROUP_CHAT_ID:
+            modt.append(LEADER_GROUP_CHAT_ID)
+        else:
+            modt += [u["telegram_id"] for u in db.all_users() if u.get("rolle") == "pro"]
+        for m in dict.fromkeys(str(x) for x in modt):
+            try:
+                telegram.send_message(m, kort)
+            except Exception:
+                pass
         return
 
     kunde = _find_kunde(fra) if fra else None
@@ -618,7 +638,15 @@ def behandl_optagelse(params, type_):
     else:
         sp = "Skal jeg gøre noget med det? (opret sag / SMS / påmindelse — eller 'nej')"
     linjer.append("→ " + sp)
+    linjer.append("(skriv 'vis samtalen' for hele udskriften)")
     besked = "\n".join(linjer)
+    try:
+        db.gem_telefonsamtale(type_, retell._norm_tlf(fra), (kunde or {}).get("kundenummer") or "",
+                              (kunde or {}).get("navn") or r.get("navn") or "",
+                              (besvaret or {}).get("navn") or "", int(varighed or 0),
+                              udskrift, json.dumps(r, ensure_ascii=False), besked)
+    except Exception as e:
+        print(f"[telefonnotat] kunne ikke gemme samtalen: {str(e)[:120]}", flush=True)
 
     # ---- modtagere: den der tog den + lederen/lederne ----
     modtagere = []

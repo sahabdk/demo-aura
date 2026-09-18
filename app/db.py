@@ -104,6 +104,37 @@ def init_db():
                 c.execute(f"ALTER TABLE adr_anmodninger ADD COLUMN {kol}")
             except sqlite3.OperationalError:
                 pass
+        # Telefonsamtaler (telefonnotat): fuld udskrift + resume pr. opkald
+        c.execute("""CREATE TABLE IF NOT EXISTS telefonsamtaler (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                type TEXT, telefon TEXT, kundenummer TEXT, kunde TEXT, medarbejder TEXT,
+                varighed INTEGER, udskrift TEXT, resume TEXT, notat TEXT)""")
+
+
+# ---- Telefonsamtaler ----
+
+def gem_telefonsamtale(type_, telefon, kundenummer, kunde, medarbejder, varighed, udskrift, resume, notat):
+    with conn() as c:
+        c.execute("INSERT INTO telefonsamtaler(ts, type, telefon, kundenummer, kunde, medarbejder, "
+                  "varighed, udskrift, resume, notat) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                  (datetime.now().isoformat(timespec="seconds"), type_, telefon, kundenummer, kunde,
+                   medarbejder, varighed, udskrift, resume, notat))
+
+
+def telefonsamtaler_seneste(antal=100, telefon=None, kunde=None):
+    q = "SELECT * FROM telefonsamtaler"
+    args, w = [], []
+    if telefon:
+        w.append("telefon LIKE ?"); args.append(f"%{telefon[-8:]}%")
+    if kunde:
+        w.append("LOWER(kunde) LIKE ?"); args.append(f"%{kunde.lower()}%")
+    if w:
+        q += " WHERE " + " AND ".join(w)
+    q += " ORDER BY id DESC LIMIT ?"
+    args.append(antal)
+    with conn() as c:
+        return [dict(r) for r in c.execute(q, args).fetchall()]
 
 
 # ---- Brugere / roller ----
@@ -278,10 +309,11 @@ def recent_messages(telegram_id, limit=10):
 
 
 def save_message(telegram_id, rolle, indhold):
+    from .config import now_local
     with conn() as c:
         c.execute(
-            "INSERT INTO samtaler(telegram_id, rolle, indhold) VALUES(?,?,?)",
-            (str(telegram_id), rolle, indhold),
+            "INSERT INTO samtaler(telegram_id, rolle, indhold, ts) VALUES(?,?,?,?)",
+            (str(telegram_id), rolle, indhold, now_local().strftime("%Y-%m-%d %H:%M:%S")),
         )
 
 

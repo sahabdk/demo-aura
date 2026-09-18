@@ -236,6 +236,14 @@ async def admin_skabelon_gem(secret: str, request: Request):
     return {"ok": True}
 
 
+@app.get("/admin/{secret}/opkald")
+def admin_opkald(secret: str):
+    """Telefonsamtaler med fuld udskrift (til Pilly-dashboardets 📞 Opkald-fane)."""
+    if not ADMIN_SECRET or secret != ADMIN_SECRET:
+        raise HTTPException(403, "forkert admin-noegle")
+    return {"opkald": db.telefonsamtaler_seneste(150)}
+
+
 @app.get("/admin/{secret}/sag/{nr}")
 def admin_sag_raa(secret: str, nr: str):
     """Vis sagens RAA felter fra baade v2 REST og GraphQL (fejlsøgning af feltnavne)."""
