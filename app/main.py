@@ -182,7 +182,7 @@ _SKABELON_NOEGLER = ("skabelon_rykker1_emne", "skabelon_rykker1_tekst",
                      "telefon_mobiler", "telefon_intro", "telefon_svarer", "telefon_private",
                      "telefon_tilstand", "telefon_visning", "telefon_hvisk", "telefon_ringbesked",
                      "telefon_svarer_optaget", "telefon_hovednummer", "telefon_intro_udgaaende",
-                     "skabelon_sms_nykunde")
+                     "telefon_forsinkelse", "skabelon_sms_nykunde")
 
 
 @app.get("/admin/{secret}/skabeloner")
@@ -209,6 +209,7 @@ def admin_skabeloner(secret: str):
     ud["telefon_svarer"] = db.get_meta("telefon_svarer") or _tn.STD_SVARER
     ud["telefon_svarer_optaget"] = db.get_meta("telefon_svarer_optaget") or _tn.STD_SVARER_OPTAGET
     ud["telefon_hovednummer"] = db.get_meta("telefon_hovednummer") or ""
+    ud["telefon_forsinkelse"] = db.get_meta("telefon_forsinkelse") or "2"
     _v = db.get_meta("telefon_intro_udgaaende")
     ud["telefon_intro_udgaaende"] = _tn.STD_INTRO_UD if _v is None else _v
     ud["telefon_private"] = db.get_meta("telefon_private") or ""

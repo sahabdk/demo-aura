@@ -172,7 +172,13 @@ def twiml_indgaaende(form):
             threading.Thread(target=_ringer_nu_detaljer, args=(fra, sendte), daemon=True).start()
         except Exception as e:
             print(f"[ringer_nu] fejlede: {str(e)[:120]}", flush=True)
+    # Lille pause foer ring-ud, saa Telegram-banneret altid er paa skaermen foerst (std. 2 sek.)
+    try:
+        pause = max(0, min(8, int(db.get_meta("telefon_forsinkelse") or 2)))
+    except (ValueError, TypeError):
+        pause = 2
     return (f"<Response>{_say(intro) if intro else ''}"
+            f"{f'<Pause length={chr(34)}{pause}{chr(34)}/>' if pause else ''}"
             f'<Dial timeout="{RING_SEK}"{caller}{optag} action="{_url("efter-dial")}" method="POST">'
             f"{numre}</Dial></Response>")
 
@@ -198,9 +204,73 @@ def _hvem(fra):
     return f"{navn} (kundenr. {info.get('kn')})", info
 
 
-def _kundekort_kort(kn):
-    """Lyn-overblik over kunden fra cachen (ingen nye API-kald hvis cachen er varm):
-    adresse, aabne sager (med planlagt tid), seneste lukkede sag, forfaldne fakturaer."""
+_KORT_CACHE = {"ts": 0.0, "kort": {}}
+
+
+def byg_kundekort_indeks():
+    """Scheduler (hvert 10. min): kundekort for ALLE kunder med sager/fakturaer -> hukommelsen,
+    saa 'ringer nu'-beskeden kan indeholde alt fra foerste sekund uden API-kald."""
+    from . import ordrestyring as os_api
+    from . import os_graphql as os_gql
+    from datetime import datetime as _dt
+    kort = {}
+    try:
+        adresser = {}
+        for d in os_api.all_debtors():
+            adr = " ".join(x for x in (d.get("customer_address"), str(d.get("customer_postalcode") or ""),
+                                       d.get("customer_city")) if x).strip()
+            if adr:
+                adresser[str(d.get("customer_number"))] = adr
+        statusser = {str(s.get("id")): (s.get("text") or "") for s in os_api.case_statuses()}
+        lukket = str(os_api.closed_status_id())
+        plan = {}
+        for p in (os_gql._PLAN_CACHE.get("rows") or []):
+            plan.setdefault(str(p.get("sagsnummer")), p)
+        pr_kunde = {}
+        for c in os_api.cases_paged():
+            pr_kunde.setdefault(str(c.get("customer_number")), []).append(c)
+        forfaldne = {}
+        try:
+            for f in os_api.overdue_unpaid_invoices():
+                k = str(f.get("customer_number") or f.get("debtor_number") or "")
+                forfaldne[k] = forfaldne.get(k, 0) + 1
+        except Exception:
+            pass
+        for kn in set(list(pr_kunde) + list(forfaldne)):
+            linjer = []
+            if adresser.get(kn):
+                linjer.append(f"📍 {adresser[kn]}")
+            mine = pr_kunde.get(kn, [])
+            for c in [c for c in mine if str(c.get("status")) != lukket][:3]:
+                nr = c.get("case_number")
+                besk = (c.get("description") or "").strip().replace("\n", " ")[:50]
+                p = plan.get(str(nr))
+                tid = (" · planlagt " + _dt.fromtimestamp(p["startTime"]).strftime("%d/%m kl. %H:%M")
+                       if p and p.get("startTime") else "")
+                linjer.append(f"🔧 Sag {nr} ({statusser.get(str(c.get('status')), '')}){tid}: {besk}")
+            for c in [c for c in mine if str(c.get("status")) == lukket][:1]:
+                besk = (c.get("description") or "").strip().replace("\n", " ")[:50]
+                try:
+                    dato = _dt.fromtimestamp(int(c.get("created_at") or 0)).strftime("%d/%m-%y")
+                except (ValueError, TypeError, OSError):
+                    dato = ""
+                linjer.append(f"✅ Sidst: sag {c.get('case_number')} {dato}: {besk}")
+            if forfaldne.get(kn):
+                n = forfaldne[kn]
+                linjer.append(f"⚠️ {n} forfalden faktura" + ("er" if n > 1 else ""))
+            kort[kn] = linjer
+        _KORT_CACHE.update(ts=time.time(), kort=kort)
+        print(f"[kundekort_indeks] {len(kort)} kundekort klar", flush=True)
+    except Exception as e:
+        print(f"[kundekort_indeks] fejlede: {str(e)[:150]}", flush=True)
+
+
+def _kundekort_kort(kn, kun_cache=False):
+    """Lyn-overblik over kunden: fra det forudbyggede indeks (0 ms) - ellers live fra cachen."""
+    if _KORT_CACHE["kort"] and time.time() - _KORT_CACHE["ts"] < 1200:
+        return _KORT_CACHE["kort"].get(str(kn)) or []
+    if kun_cache:
+        return None
     from . import ordrestyring as os_api
     from . import os_graphql as os_gql
     from datetime import datetime as _dt
@@ -261,21 +331,29 @@ def _ringer_nu_tekst(fra):
 
 
 def _ringer_nu_hurtig(fra, mob):
-    """Foerste linje til Telegram med det samme. Returnerer [(chat_id, message_id, tekst, info)]."""
+    """Foerste besked til Telegram med det samme - MED kundekort hvis indekset er klar.
+    Returnerer [(chat_id, message_id, tekst, info_eller_None_hvis_faerdig)]."""
     tekst, info = _ringer_nu_tekst(fra)
+    faerdig = False
+    if info:
+        klar = _kundekort_kort(info.get("kn"), kun_cache=True)   # 0 ms hvis indekset er bygget
+        if klar is not None:
+            if klar:
+                tekst += "\n" + "\n".join(klar)
+            faerdig = True
     sendte = []
     for m in mob:
         if m.get("telegram_id"):
             try:
                 mid = telegram.send_and_get_id(m["telegram_id"], tekst)
-                sendte.append((m["telegram_id"], mid, tekst, info))
+                sendte.append((m["telegram_id"], mid, tekst, None if faerdig else info))
             except Exception:
                 pass
     return sendte
 
 
 def _ringer_nu_detaljer(fra, sendte):
-    """Bagefter (i traad): kundekort haegtes paa den samme besked (redigeres, ingen ny notifikation)."""
+    """Kun hvis indekset ikke var klar: kundekort haegtes paa bagefter (redigeres, ingen ny notifikation)."""
     if not sendte or not sendte[0][3]:
         return
     info = sendte[0][3]
@@ -435,13 +513,33 @@ def _besvaret_af(parent_sid):
 # ---------- udskrift + resume ----------
 
 def _udskriv(lyd: bytes) -> str:
+    """Udskrift UDEN ordliste-prompt: faar modellen stilhed, digter den ellers ud fra prompten
+    ('registrer timer, planlaeg, materialer, Testvej 1...') - og det ligner en rigtig ordre."""
     f = io.BytesIO(lyd)
     f.name = "opkald.mp3"
-    tr = telegram._client.audio.transcriptions.create(
-        model=OPENAI_STT_MODEL, file=f, language="da",
-        prompt="Dansk telefonsamtale mellem en håndværker og en kunde om en opgave, adresse og tidspunkt. "
-               + telegram._stt_prompt()[:600])
+    tr = telegram._client.audio.transcriptions.create(model=OPENAI_STT_MODEL, file=f, language="da")
     return (tr.text or "").strip()
+
+
+_HALLUCINATION = ("tak fordi du så med", "tak for at du så med", "undertekster", "tekstet af",
+                  "abonner", "www.", "amara.org", "musik", "♪")
+
+
+def _reel_samtale(udskrift, sek):
+    """Er der reelt sagt noget? Korte opkald og typiske 'stilheds-digte' filtreres fra."""
+    u = (udskrift or "").strip().lower()
+    if sek < 6:
+        return False                     # 4 sek. kan ikke rumme en samtale
+    if len(u) < 15:
+        return False
+    if any(h in u for h in _HALLUCINATION):
+        return False
+    ord_ = u.split()
+    if sek < 15 and len(ord_) < 6:
+        return False
+    if len(set(ord_)) <= 2 and len(ord_) >= 4:   # "hallo hallo hallo hallo"
+        return False
+    return True
 
 
 def _find_kunde(nummer):
@@ -541,8 +639,12 @@ def _resume(udskrift, kunde, type_):
         response_format={"type": "json_object"},
         messages=[{"role": "system", "content":
                    "Du laver telefonnotater for et dansk haandvaerkerfirma. Skriv kort, konkret, paa dansk. "
-                   "Find ikke paa noget - staar det ikke i udskriften, saa skriv det ikke. Svar KUN med JSON: "
-                   '{"tomt": bool (ingen reel besked/aerinde), "aerinde": "hvad kunden vil, 1-2 linjer", '
+                   "Find ALDRIG paa noget - staar det ikke ordret i udskriften, saa skriv det ikke. Er "
+                   "udskriften bare 'hallo', 'hej', stilhed, en test eller uden reelt aerinde, saa tomt=true "
+                   "og alt andet tomt. Svar KUN med JSON: "
+                   '{"tomt": bool (ingen reel besked/aerinde), '
+                   '"citat": "et ORDRET uddrag fra udskriften der viser aerindet (tom hvis intet)", '
+                   '"aerinde": "hvad kunden vil, 1-2 linjer", '
                    '"aftalt": "hvad der blev aftalt (tid, pris, hvem goer hvad) eller tom", '
                    '"naeste_skridt": "det mest oplagte naeste skridt for firmaet, 1 linje", '
                    '"navn": "kundens navn hvis det naevnes ellers tom", '
@@ -590,23 +692,29 @@ def behandl_optagelse(params, type_):
         besvaret = _besvaret_af(call_sid) if type_ == "samtale" else None
 
     try:
+        sek = int(varighed or 0)
+    except (ValueError, TypeError):
+        sek = 0
+    try:
         lyd = _hent_lyd(rec_url)
     finally:
         _slet_optagelse(rec_sid)   # lyden gemmes ALDRIG - kun teksten
-    try:
-        udskrift = _udskriv(lyd)
-    except Exception as e:
-        telegram.send_leader(LEADER_GROUP_CHAT_ID,
-                             f"📞 Opkald fra {_pn(fra)} — kunne ikke skrive samtalen ud ({str(e)[:100]}).")
-        return
-    if len(udskrift) < 15:
+    udskrift = ""
+    if sek >= 6:   # under 6 sek.: ingen udskrift overhovedet (sparer ogsaa AI-kald)
+        try:
+            udskrift = _udskriv(lyd)
+        except Exception as e:
+            telegram.send_leader(LEADER_GROUP_CHAT_ID,
+                                 f"📞 Opkald fra {_pn(fra)} — kunne ikke skrive samtalen ud ({str(e)[:100]}).")
+            return
+    if not _reel_samtale(udskrift, sek):
         # Kort/tomt opkald: ingen analyse, men EN linje i Telegram - et kort opkald er en kunde der proevede
         print(f"[telefonnotat] tom optagelse fra {fra}", flush=True)
         db.log_handling("", "Aura (telefon)", "system", "telefonnotat tomt", f"{_pn(fra)} ({type_})")
         hvem_k, _ = _hvem(fra)
         kort = (f"📞 Kort opkald fra {_pn(fra)} ({hvem_k}) — {_min_sek(varighed) or 'få sek.'}, "
-                + ("ingen besked lagt." if type_ == "svarer" else "intet sagt.")
-                + (f" Udskrift: \"{udskrift}\"" if udskrift.strip() else ""))
+                + ("ingen besked lagt." if type_ == "svarer" else "ingen reel samtale.")
+                + (f" Hørt: \"{udskrift[:120]}\"" if udskrift.strip() else ""))
         try:
             db.gem_telefonsamtale(type_, retell._norm_tlf(fra), "", "", (besvaret or {}).get("navn") or "",
                                   int(varighed or 0), udskrift, "{}", kort)
@@ -626,7 +734,12 @@ def behandl_optagelse(params, type_):
 
     kunde = _find_kunde(fra) if fra else None
     r = _resume(udskrift, kunde, type_)
-    if r.get("tomt") and not (r.get("aerinde") or "").strip():
+    # Modellen skal kunne pege paa et ORDRET citat - kan den ikke, er aerindet digtet
+    citat = (r.get("citat") or "").strip().lower()
+    if citat and citat[:25] not in udskrift.lower():
+        r["tomt"] = True
+        r["aerinde"] = ""
+    if r.get("tomt"):
         db.log_handling("", "Aura (telefon)", "system", "telefonnotat tomt", f"{_pn(fra)} ({type_})")
         return
 

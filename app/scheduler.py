@@ -417,12 +417,24 @@ def telefon_indeks():
         print(f"[telefon_indeks] fejlede: {str(e)[:150]}", flush=True)
 
 
+def kundekort_indeks():
+    """Hvert 10. min (efter plan-indekset): kundekort (adresse, sager, fakturaer) klar i hukommelsen,
+    saa 'ringer nu'-beskeden er komplet fra foerste sekund."""
+    try:
+        from . import telefonnotat
+        telefonnotat.byg_kundekort_indeks()
+    except Exception as e:
+        print(f"[kundekort_indeks] fejlede: {str(e)[:150]}", flush=True)
+
+
 def start_scheduler():
     sch = BackgroundScheduler(timezone=TZ)
     sch.add_job(plan_indeks, "cron", minute="*/10")
     sch.add_job(plan_indeks, "date")   # ogsaa straks ved opstart (i baggrunden)
     sch.add_job(telefon_indeks, "cron", minute="3,33")
     sch.add_job(telefon_indeks, "date")
+    sch.add_job(kundekort_indeks, "cron", minute="1,11,21,31,41,51")   # lige efter plan-indekset
+    sch.add_job(kundekort_indeks, "date", run_date=datetime.now() + timedelta(seconds=90))
     sch.add_job(morning_digest, "cron", hour=7, minute=0)
     sch.add_job(soon_reminders, "cron", minute="*/5")   # hele døgnet, alle dage
     sch.add_job(faktura_overview, "cron", day_of_week="mon", hour=8, minute=0)
