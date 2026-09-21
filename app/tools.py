@@ -1298,6 +1298,70 @@ def ring_op(args, ctx):
                         "hovednummeret. Samtalen bliver noteret bagefter. Svar KORT - kun det."}
 
 
+def sms_til_kunde(args, ctx):
+    """Send en kort SMS til en kunde (ankomsttid, forsinkelse, kort besked) fra firmaet."""
+    from . import retell as _retell
+    import os as _os
+    tlf = (args.get("telefon") or "").strip()
+    navn = (args.get("navn") or "").strip()
+    kn = str(args.get("customer_number") or "").strip()
+    besked = (args.get("besked") or "").strip()
+    if not besked:
+        return {"fejl": "hvad skal der staa i sms'en?"}
+    # kunde -> nummer (som i ring_op)
+    if not kn and not tlf and args.get("sagsnummer"):
+        try:
+            kn = str((os_api.get_case(args["sagsnummer"]) or {}).get("customer_number") or "")
+        except Exception:
+            pass
+    if not kn and not tlf and args.get("kunde"):
+        hits = fuzzy_find_customers(str(args["kunde"]), limit=3, with_scores=True)
+        staerke = [(s, d) for s, d in hits if s >= 0.85]
+        if len(staerke) == 1 or (len(staerke) > 1 and staerke[0][0] >= staerke[1][0] + 0.08):
+            kn = str(staerke[0][1].get("customer_number"))
+        elif hits:
+            return {"resultat": "Flere kunder matcher - spoerg hvilken (kun en gang).",
+                    "kandidater": [{"customer_number": d.get("customer_number"), "navn": d.get("customer_name"),
+                                    "adresse": d.get("customer_address")} for s, d in hits]}
+        else:
+            return {"resultat": f"Ingen kunde matcher '{args['kunde']}'. Sig telefonnummeret i stedet."}
+    if kn and not tlf:
+        try:
+            d = os_api.get_debtor(kn) or {}
+        except Exception:
+            d = {}
+        navn = navn or d.get("customer_name") or ""
+        tlf = str(d.get("customer_mobile") or d.get("customer_telephone") or "")
+        if not tlf:
+            try:
+                for c in os_api.debtor_contacts(kn):
+                    if c.get("mobile") or c.get("telephone"):
+                        tlf = str(c.get("mobile") or c.get("telephone"))
+                        break
+            except Exception:
+                pass
+    n = _retell._norm_tlf(tlf)
+    if len(n) < 8:
+        return {"resultat": "Der staar intet mobilnummer paa kunden - sig nummeret, saa sender jeg."}
+    firma = _os.environ.get("FIRMA_NAVN", "")
+    tekst = besked if (firma and firma.lower() in besked.lower()) else f"{besked} Mvh {firma}".strip()
+    # dublet-vaern: samme tekst til samme nummer inden for 10 min
+    import hashlib, time as _t
+    fp = hashlib.sha256(f"{n}:{tekst}".encode()).hexdigest()[:16]
+    if db.get_meta("sms_kunde_" + fp) and _t.time() - float(db.get_meta("sms_kunde_" + fp)) < 600:
+        return {"resultat": "Praecis den sms er ALLEREDE sendt til det nummer for lidt siden. Send ikke igen."}
+    try:
+        ret = _retell.send_sms(n, tekst, kontekst=f"sms til {navn or n}")
+    except Exception as e:
+        return {"fejl": f"sms'en blev IKKE sendt: {str(e)[:150]}"}
+    db.log_handling("", ctx.get("navn") or "", ctx.get("telegram_id"), "sms til kunde",
+                    f"{navn or ''} {n}: {tekst} ({ret})")
+    if ret != "sent":
+        return {"resultat": f"SMS'en blev IKKE sendt ({ret} - testtilstand eller sms slaaet fra). Sig det aerligt."}
+    db.set_meta("sms_kunde_" + fp, _t.time())
+    return {"resultat": f"SMS sendt til {navn or n} ({n}): \"{tekst}\". Bekraeft kort."}
+
+
 def vis_telefonsamtale(args, ctx):
     """Hele udskriften af en telefonsamtale (seneste, eller for en bestemt kunde/nummer)."""
     from . import retell as _retell
@@ -1462,6 +1526,23 @@ TOOLS = [
                 "beskrivelse": {"type": "string"}, "medarbejder": {"type": "string"},
                 "pause_min": {"type": "integer"}, "tillaeg": {"type": "string"}},
                 "required": ["sagsnummer", "fra", "til"]},
+        }},
+    },
+    {
+        "func": sms_til_kunde, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "sms_til_kunde",
+            "description": "Send en kort SMS til en kunde fra firmaet: ankomsttid ('skriv til John, "
+                           "Kongensgade 72, at jeg er der kl. 16:30'), forsinkelse ('sig til Hansen jeg "
+                           "bliver 5 min forsinket'), kort besked. Skriv beskeden faerdig paa paent dansk "
+                           "i 'besked' (fx 'Hej John. Vi kommer kl. 16:30 i dag.' / 'Hej. Vi bliver ca. "
+                           "5 min forsinket.'). Firmanavn tilfoejes automatisk. Kunden findes via kunde "
+                           "(navn evt. + adresse), customer_number, sagsnummer eller telefon.",
+            "parameters": {"type": "object", "properties": {
+                "besked": {"type": "string"}, "kunde": {"type": "string"},
+                "customer_number": {"type": "string"}, "sagsnummer": {"type": "string"},
+                "telefon": {"type": "string"}, "navn": {"type": "string"}},
+                "required": ["besked"]},
         }},
     },
     {
@@ -1887,7 +1968,7 @@ def schemas_for_role(rolle: str):
 
 # Ændrende værktøjer der skal i handlingsloggen (læse-værktøjer logges ikke)
 MUTERENDE = {
-    "ring_op": "opkald startet",
+    "ring_op": "opkald startet", "sms_til_kunde": "sms sendt til kunde",
     "send_kundeoplysninger_sms": "kundeoplysninger-sms sendt",
     "opret_kunde": "kunde oprettet", "opdater_kunde": "kunde opdateret",
     "opret_sag": "sag oprettet", "opdater_sag": "sag opdateret",
