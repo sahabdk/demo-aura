@@ -626,6 +626,13 @@ def saet_rykker_niveau(args, ctx):
     return {"resultat": f"Kunde {args['kundenummer']} er nu registreret som rykket {args['antal']} gang(e)"}
 
 
+def meld_forsinkelse(args, ctx):
+    """'jeg bliver 5 min forsinket hos Thomas paa Primavej 15' -> find aftalen/sagen -> paen SMS."""
+    from . import forsinkelse as _fs
+    return _fs.meld(args.get("besked") or "", ctx, customer_number=args.get("customer_number"),
+                    minutter=args.get("minutter"), tid=args.get("klokkeslaet"), typ=args.get("type"))
+
+
 def husk_aftale(args, ctx):
     """Gem en aftale/paamindelse. Angives 'medarbejder', gemmes den paa DEN person,
     saa morgen-oversigt og paamindelser gaar til dem - ikke til den der oprettede."""
@@ -1928,6 +1935,25 @@ TOOLS = [
         }},
     },
     {
+        "func": meld_forsinkelse, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "meld_forsinkelse",
+            "description": "FORSINKELSE/ANKOMST til en kunde: brugeren skriver eller siger fx 'jeg bliver 5 min "
+                           "forsinket hos Thomas paa Primavej 15', 'kommer 20 min senere til Hansen', 'er der "
+                           "kl. 14.30 hos Kongensgade 72'. Send HELE brugerens saetning i 'besked' - vaerktoejet "
+                           "finder selv aftalen (planlagt tid i dag) eller den aabne sag paa adressen/kunden, slaar "
+                           "mobilnummeret op og sender en paen SMS til kunden. Er der flere kandidater, faar du "
+                           "dem tilbage: spoerg kort og kald igen med customer_number. Brug ALTID denne (ikke "
+                           "sms_til_kunde) naar det handler om forsinkelse eller ankomsttid.",
+            "parameters": {"type": "object", "properties": {
+                "besked": {"type": "string", "description": "brugerens ord, ordret"},
+                "customer_number": {"type": "string", "description": "kun efter et valg mellem kandidater"},
+                "minutter": {"type": "integer"}, "klokkeslaet": {"type": "string", "description": "HH:MM"},
+                "type": {"type": "string", "enum": ["forsinket", "ankomst"]}},
+                "required": ["besked"]},
+        }},
+    },
+    {
         "func": husk_aftale, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "husk_aftale",
@@ -1968,6 +1994,7 @@ def schemas_for_role(rolle: str):
 
 # Ændrende værktøjer der skal i handlingsloggen (læse-værktøjer logges ikke)
 MUTERENDE = {
+    "meld_forsinkelse": "forsinkelses-sms sendt",
     "ring_op": "opkald startet", "sms_til_kunde": "sms sendt til kunde",
     "send_kundeoplysninger_sms": "kundeoplysninger-sms sendt",
     "opret_kunde": "kunde oprettet", "opdater_kunde": "kunde opdateret",
