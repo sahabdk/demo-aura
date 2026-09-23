@@ -125,9 +125,9 @@ en ny kunde, hvis søgningen intet giver — og sig i så fald tydeligt "jeg kan
 skal jeg oprette ham som ny kunde?".
 INSTALLATIONS-/ARBEJDS-/LEVERINGSADRESSE hører til SAGEN — det er stedet arbejdet udføres,
 IKKE kundens egen adresse. Ret aldrig kundens adresse ud fra en installationsadresse. Giv
-adressen med i leveringsadresse-parameteren, så sætter værktøjet den selv FORREST i sagens
+adressen med i leveringsadresse-parameteren, så placerer værktøjet den selv efter firmaets regel (standard FORREST) i sagens
 beskrivelse (det er firmaets praksis — der findes intet separat felt i deres arbejdsgang).
-BESKRIVELSENS FORMAT: adressen på FØRSTE linje afsluttet med komma, opgaven på NY linje:
+BESKRIVELSENS FORMAT (standard - FIRMAETS EGNE ORDREREGLER går ALTID forud): adressen på FØRSTE linje afsluttet med komma, opgaven på NY linje:
 "Stadionvej 75,
 Badeværelse, pære springer hurtigt samt el til elbil."
 Ordet "beskrivelse" i brugerens sætning er en FELT-anvisning, ALDRIG tekst: siger Dan
@@ -231,6 +231,15 @@ på det kundenummer med opgaven fra det tidligere telefonnotat. Beskrivelsen = "
 et tidspunkt, så planlæg sagen. Spørg KUN om det, der reelt mangler (fx adresse ved ukendt kunde).
 Retter brugeren noget ("nej, det er torsdag"), så brug rettelsen. Svarer brugeren "nej", så gør intet.
 
+ORDREREGLER: Lederen kan selv bestemme hvordan ordrer skrives ("adressen skal stå sidst", "skriv altid
+telefonnummeret i beskrivelsen", "vis ordreregler", "slet regel 2") → ordre_regel. Er det en medarbejder
+der beder om det, så sig pænt at kun lederen kan ændre ordrereglerne.
+
+PRIVATE NUMRE: Siger brugeren at et nummer/en person er privat og ikke skal optages eller noteres ("min kone
+ringer fra 20 12 34 56", "det var bare min ven, det skal ikke tælles med", "det sidste opkald var privat") →
+privat_nummer (handling=tilfoej; brug seneste=true når de peger på det seneste opkald/notat). Opret INTET på
+sagen fra det notat. "Fjern X fra de private" → handling=fjern. "Hvilke numre er private?" → handling=vis.
+
 SVAR PÅ EN ORDRE: Starter beskeden med "(Brugeren svarer på sag N …)", så gælder den HELT SIKKERT sag N. Spørg ALDRIG hvilken sag — brug skriv_bemaerkning eller opdater_sag på sag N med det samme. Send kun selve noten/ændringen videre til værktøjet (ikke parentes-konteksten).
 
 BESKRIVELSE vs BEMÆRKNING (vigtigt — bland dem ALDRIG sammen):
@@ -293,6 +302,11 @@ def run_agent(ctx: dict, user_message: str, raw_text: str = None, max_steps: int
     today = now_local()
     header = (f"Lige nu (dansk tid): {today:%Y-%m-%d %H:%M} ({today:%A}). "
               f"Bruger: {ctx['navn']} (rolle: {ctx['rolle']}).")
+    regler = tools.ordre_regler_liste()
+    if regler:
+        header += ("\nFIRMAETS EGNE ORDREREGLER (sat af lederen - går FORAN standardformatet ovenfor, "
+                   "følg dem ALTID når du opretter eller retter ordrer/sager):\n"
+                   + "\n".join(f"{i}. {r}" for i, r in enumerate(regler, 1)))
     if talt:
         header += ("\nBrugerens besked er en TALT besked, og dit svar bliver læst HØJT: "
                    "svar som i en naturlig samtale - flydende, korte sætninger, varmt og "

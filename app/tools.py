@@ -340,7 +340,68 @@ def _med_adresse(beskrivelse, adresse):
         return b
     if _norm(a) in _norm(b):
         return b
+    # Lederen kan selv bestemme placeringen via Nila ("adressen skal stå sidst") -> meta ordre_adresse
+    plac = (db.get_meta("ordre_adresse") or "foerst").strip().lower()
+    if plac == "ingen":
+        return b
+    if plac == "sidst":
+        return f"{b}\n{a}" if b else a
     return f"{a},\n{b}" if b else a
+
+# ---------- firmaets egne regler for hvordan ordrer skrives (styres af lederen via Nila) ----------
+
+def ordre_regler_liste():
+    import json as _json
+    try:
+        r = _json.loads(db.get_meta("ordre_regler") or "[]")
+        return [str(x) for x in r if str(x).strip()]
+    except Exception:
+        return []
+
+
+def ordre_regel(args, ctx):
+    """'adressen skal stå sidst i beskrivelsen' / 'skriv altid kundens telefonnummer i beskrivelsen' /
+    'vis mine ordreregler' / 'slet regel 2' / 'nulstil reglerne'."""
+    import json as _json
+    handling = (args.get("handling") or "tilfoej").lower()
+    regler = ordre_regler_liste()
+    plac_navn = {"foerst": "først (første linje)", "sidst": "sidst (sidste linje)",
+                 "ingen": "ikke i beskrivelsen"}
+    if args.get("adresse_placering"):
+        plac = args["adresse_placering"].lower()
+        if plac not in plac_navn:
+            return {"fejl": "adresse_placering skal være foerst, sidst eller ingen"}
+        db.set_meta("ordre_adresse", plac)
+        if handling != "tilfoej" or not (args.get("regel") or "").strip():
+            return {"resultat": f"Fra nu af står arbejdsadressen {plac_navn[plac]} i ordrebeskrivelsen."}
+    if handling == "vis":
+        plac = db.get_meta("ordre_adresse") or "foerst"
+        linjer = [f"Adresse i beskrivelsen: {plac_navn.get(plac, plac)}"]
+        linjer += [f"{i}. {r}" for i, r in enumerate(regler, 1)] or ["(ingen egne regler endnu)"]
+        return {"resultat": "Ordreregler:\n" + "\n".join(linjer)}
+    if handling == "fjern":
+        try:
+            nr = int(args.get("nummer"))
+            fjernet = regler.pop(nr - 1)
+        except (TypeError, ValueError, IndexError):
+            return {"resultat": "Hvilket nummer? Sig 'vis ordreregler' for at se listen."}
+        db.set_meta("ordre_regler", _json.dumps(regler, ensure_ascii=False))
+        return {"resultat": f"Reglen er slettet: {fjernet}"}
+    if handling == "nulstil":
+        db.set_meta("ordre_regler", "[]")
+        db.set_meta("ordre_adresse", "foerst")
+        return {"resultat": "Alle egne ordreregler er slettet - standarden gælder igen (adresse først)."}
+    regel = (args.get("regel") or "").strip()
+    if not regel:
+        return {"resultat": "Hvad skal reglen være? Fx 'skriv altid kundens telefonnummer sidst i beskrivelsen'."}
+    if len(regler) >= 20:
+        return {"resultat": "Der er allerede 20 regler - slet en først ('vis ordreregler')."}
+    if regel.lower() in [r.lower() for r in regler]:
+        return {"resultat": "Den regel findes allerede.", "dublet": True}
+    regler.append(regel[:300])
+    db.set_meta("ordre_regler", _json.dumps(regler, ensure_ascii=False))
+    return {"resultat": f"Gemt som regel {len(regler)}: {regel[:300]}. Den gælder for alle nye ordrer fra nu af."}
+
 
 
 def opret_sag(args, ctx):
@@ -1368,6 +1429,55 @@ def sms_til_kunde(args, ctx):
     db.set_meta("sms_kunde_" + fp, _t.time())
     return {"resultat": f"SMS sendt til {navn or n} ({n}): \"{tekst}\". Bekraeft kort."}
 
+# ---------- private numre (optages aldrig, giver aldrig notat) ----------
+
+def _private_numre():
+    from . import retell as _r
+    ud = []
+    for x in (db.get_meta("telefon_private") or "").split(","):
+        d = _r._norm_tlf(x)[-8:]
+        if len(d) == 8 and d not in ud:
+            ud.append(d)
+    return ud
+
+
+def privat_nummer(args, ctx):
+    """'20 12 34 56 er min kone - skal ikke optages' / 'det sidste opkald var privat' / 'fjern 20123456'
+    / 'vis private numre'. Numrene gemmes i telefon_private (samme felt som i Pilly -> Skabeloner)."""
+    from . import retell as _r
+    handling = (args.get("handling") or "tilfoej").lower()
+    numre = _private_numre()
+    if handling == "vis":
+        if not numre:
+            return {"resultat": "Der er ingen private numre endnu - alle opkald bliver noteret."}
+        return {"resultat": "Private numre (optages aldrig): " + ", ".join(
+            f"{n[:2]} {n[2:4]} {n[4:6]} {n[6:]}" for n in numre)}
+    nr = _r._norm_tlf(args.get("telefon") or "")[-8:]
+    if not nr and args.get("seneste"):
+        seneste = db.telefonsamtaler_seneste(antal=1)
+        nr = _r._norm_tlf((seneste[0] if seneste else {}).get("telefon") or "")[-8:]
+        if not nr:
+            return {"resultat": "Jeg kan ikke finde et seneste opkald med et nummer. Sig nummeret."}
+    if len(nr) != 8:
+        return {"resultat": "Hvilket nummer? Sig de 8 cifre (fx 20 12 34 56)."}
+    pent = f"{nr[:2]} {nr[2:4]} {nr[4:6]} {nr[6:]}"
+    navn = (args.get("navn") or "").strip()
+    if handling == "fjern":
+        if nr not in numre:
+            return {"resultat": f"{pent} står ikke på listen over private numre."}
+        numre.remove(nr)
+        db.set_meta("telefon_private", ",".join(numre))
+        return {"resultat": f"{pent} er fjernet - opkald fra det nummer bliver noteret igen."}
+    if nr in numre:
+        return {"resultat": f"{pent} står allerede som privat.", "dublet": True}
+    numre.append(nr)
+    db.set_meta("telefon_private", ",".join(numre))
+    # slet en evt. gemt udskrift af det seneste opkald fra nummeret
+    db.set_meta(f"telefon_udskrift_{nr}", "")
+    return {"resultat": f"{pent}{' (' + navn + ')' if navn else ''} er nu privat: opkald fra nummeret bliver "
+                        "aldrig optaget eller noteret."}
+
+
 
 def vis_telefonsamtale(args, ctx):
     """Hele udskriften af en telefonsamtale (seneste, eller for en bestemt kunde/nummer)."""
@@ -1954,6 +2064,39 @@ TOOLS = [
         }},
     },
     {
+        "func": ordre_regel, "roles": {"pro"},
+        "schema": {"type": "function", "function": {
+            "name": "ordre_regel",
+            "description": "LEDEREN bestemmer hvordan ordrer skrives i ordrestyring: 'adressen skal stå sidst' "
+                           "(adresse_placering=sidst), 'adressen først igen' (foerst), 'ingen adresse i beskrivelsen' "
+                           "(ingen), andre faste regler som tekst i 'regel' (fx 'projektnavn skal altid være "
+                           "vejnavnet', 'skriv altid kundens telefonnummer sidst i beskrivelsen', 'brug ikke "
+                           "forkortelser'). 'vis ordreregler' -> handling=vis, 'slet regel 2' -> handling=fjern + "
+                           "nummer, 'nulstil ordrereglerne' -> handling=nulstil.",
+            "parameters": {"type": "object", "properties": {
+                "handling": {"type": "string", "enum": ["tilfoej", "vis", "fjern", "nulstil"]},
+                "regel": {"type": "string", "description": "reglen formuleret kort og klart"},
+                "adresse_placering": {"type": "string", "enum": ["foerst", "sidst", "ingen"]},
+                "nummer": {"type": "integer"}},
+                "required": ["handling"]},
+        }},
+    },
+    {
+        "func": privat_nummer, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "privat_nummer",
+            "description": "PRIVATE NUMRE der aldrig skal optages/noteres (venner, familie): 'min kone ringer fra "
+                           "20 12 34 56, det skal ikke med', 'det sidste opkald var privat' (seneste=true), "
+                           "'fjern 20123456 fra de private' (handling=fjern), 'vis private numre' (handling=vis).",
+            "parameters": {"type": "object", "properties": {
+                "handling": {"type": "string", "enum": ["tilfoej", "fjern", "vis"]},
+                "telefon": {"type": "string"},
+                "seneste": {"type": "boolean", "description": "true = nummeret fra det seneste opkald"},
+                "navn": {"type": "string", "description": "hvem nummeret tilhører (valgfrit)"}},
+                "required": ["handling"]},
+        }},
+    },
+    {
         "func": husk_aftale, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "husk_aftale",
@@ -1994,6 +2137,8 @@ def schemas_for_role(rolle: str):
 
 # Ændrende værktøjer der skal i handlingsloggen (læse-værktøjer logges ikke)
 MUTERENDE = {
+    "privat_nummer": "privat-liste ændret",
+    "ordre_regel": "ordreregel ændret",
     "meld_forsinkelse": "forsinkelses-sms sendt",
     "ring_op": "opkald startet", "sms_til_kunde": "sms sendt til kunde",
     "send_kundeoplysninger_sms": "kundeoplysninger-sms sendt",

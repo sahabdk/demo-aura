@@ -183,7 +183,8 @@ _SKABELON_NOEGLER = ("skabelon_rykker1_emne", "skabelon_rykker1_tekst",
                      "telefon_tilstand", "telefon_visning", "telefon_hvisk", "telefon_ringbesked",
                      "telefon_svarer_optaget", "telefon_hovednummer", "telefon_intro_udgaaende",
                      "telefon_forsinkelse", "skabelon_sms_nykunde",
-                     "skabelon_sms_forsinket", "skabelon_sms_forsinket_tid", "skabelon_sms_ankomst")
+                     "skabelon_sms_forsinket", "skabelon_sms_forsinket_tid", "skabelon_sms_ankomst",
+                     "ordre_regler", "ordre_adresse")
 
 
 @app.get("/admin/{secret}/skabeloner")
@@ -226,6 +227,8 @@ def admin_skabeloner(secret: str):
     ud["skabelon_sms_forsinket"] = db.get_meta("skabelon_sms_forsinket") or _fs.STD_FORSINKET
     ud["skabelon_sms_forsinket_tid"] = db.get_meta("skabelon_sms_forsinket_tid") or _fs.STD_FORSINKET_TID
     ud["skabelon_sms_ankomst"] = db.get_meta("skabelon_sms_ankomst") or _fs.STD_ANKOMST
+    ud["ordre_regler"] = db.get_meta("ordre_regler") or "[]"
+    ud["ordre_adresse"] = db.get_meta("ordre_adresse") or "foerst"
     return ud
 
 

@@ -148,6 +148,15 @@ def twiml_indgaaende(form):
         return twiml_telefonsvarer()
     # En af vores egne mobiler ringer til Nilas nummer (fx ring-tilbage fra opkaldslisten)
     if fra and any(_n8(m["nummer"]) == _n8(fra) for m in mob):
+        # En kollega ringer firmanummeret (viderestillet til Nila): stil om til de ANDRE mobiler -
+        # uden intro og UDEN optagelse (internt opkald = aldrig notat).
+        andre = [m for m in mob if _n8(m["nummer"]) != _n8(fra)]
+        if andre:
+            til_nr = form.get("To") or ""
+            caller = f' callerId="{escape(fra)}"' if fra.startswith("+") else (
+                f' callerId="{escape(til_nr)}"' if til_nr.startswith("+") else "")
+            return (f'<Response><Dial timeout="{RING_SEK}"{caller}>'
+                    + "".join(f"<Number>{m['nummer']}</Number>" for m in andre) + "</Dial></Response>")
         return (f"<Response>{_say('Hej. Det her er Nilas nummer. Ring kunden op fra notatet i Telegram.')}"
                 "<Hangup/></Response>")
     if fra:
@@ -671,6 +680,9 @@ def _resume(udskrift, kunde, type_):
                    "udskriften bare 'hallo', 'hej', stilhed, en test eller uden reelt aerinde, saa tomt=true "
                    "og alt andet tomt. Svar KUN med JSON: "
                    '{"tomt": bool (ingen reel besked/aerinde), '
+                   '"privat": bool (true hvis samtalen IKKE handler om firmaets arbejde - fx en ven, familie '
+                   'eller kollega der bare sludrer om noget andet, uden opgave, kunde, tilbud, aftale eller '
+                   'noget firmaet skal goere. Er der BARE en arbejdsting i samtalen, saa false), '
                    '"citat": "et ORDRET uddrag fra udskriften der viser aerindet (tom hvis intet)", '
                    '"aerinde": "hvad kunden vil, 1-2 linjer", '
                    '"aftalt": "hvad der blev aftalt (tid, pris, hvem goer hvad) eller tom", '
@@ -756,6 +768,18 @@ def behandl_optagelse(params, type_):
         r["aerinde"] = ""
     if r.get("tomt"):
         db.log_handling("", "Aura (telefon)", "system", "telefonnotat tomt", f"{_pn(fra)} ({type_})")
+        return
+    if r.get("privat"):
+        # Privat snak (ven/familie/kollega-sludder): INGEN besked i Telegram, INTET i ordrestyring,
+        # og udskriften gemmes IKKE - kun at der var et opkald (til Samtaler-fanen i Pilly).
+        print(f"[telefonnotat] privat samtale fra {fra} - intet notat", flush=True)
+        db.log_handling("", "Aura (telefon)", "system", "telefonnotat privat", f"{_pn(fra)} ({type_})")
+        try:
+            db.gem_telefonsamtale(type_, retell._norm_tlf(fra), "", "", (besvaret or {}).get("navn") or "",
+                                  int(varighed or 0), "", "{}", "(privat samtale - intet noteret)")
+        except Exception:
+            pass
+        _banner_slet(fra)
         return
 
     # ---- beskeden (HTML til Telegram = fed skrift; ren tekst gemmes til Auras hukommelse) ----
