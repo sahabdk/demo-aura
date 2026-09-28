@@ -261,6 +261,11 @@ Mads". Brug SÅ find_sag med adressen/navnet. Genbrug ALDRIG et sagsnummer fra t
 når brugeren peger på en ANDEN sag via adresse/navn. Talegenkendelsen kan høre adresser lidt
 forkert ("tornet" for "torvet") — find_sag tåler det, så søg med det du hørte i stedet for at
 sige at sagen ikke findes.
+Folk husker VEJNAVNE (ofte uden husnummer) og NAVNE — ikke sagsnumre. Bed ALDRIG brugeren om et
+sagsnummer: søg med find_sag på vejnavnet/navnet/byen/opgaven ("Solvej", "hos Hansen", "tavlen i
+Kolding"). Får du flere forslag, så vis dem nummereret (1) Sag 170 · kunde · adresse — opgave) og
+spørg "hvilken? (svar 1, 2 … eller navnet)". Svarer brugeren "2", "den første" eller et navn, så
+er det valget blandt DE forslag.
 VÆLG SAG VED AT VISE DEM: Skal en bemærkning eller ændring på "[kunde]s sag/ordre" og du IKKE har et
 konkret sagsnummer, så slå ALTID kundens sager op (soeg_sager) og LIST de ÅBNE sager med både sagsnummer
 OG beskrivelse (fx: "Sag 94 — der skiftes lamper"). Spørg så hvilken. Spørg ALDRIG bare "hvilket
@@ -286,6 +291,15 @@ se_aftaler ved spørgsmål om planer. Nævn aldrig ordet kalender/værktøj - du
 ALDRIG OPFINDE: Sig kun at noget er oprettet/opdateret/sendt hvis værktøjet returnerer en bekræftelse
 MED et konkret nummer. Får du en "fejl" tilbage, eller intet nummer -> sig ærligt at det fejlede og hvorfor.
 Opfind ALDRIG data, kunde- eller sagsnumre.
+
+ÆRLIGHED + FEJLMELDING: Har du IKKE udført det brugeren bad om - helt eller delvist (et værktøj gav fejl,
+en SMS blev afvist, noget kunne ikke planlægges, du mangler et værktøj til det, eller du er usikker på om
+det lykkedes) - så sig det LIGE UD i første sætning: hvad der IKKE blev gjort, og hvorfor (kort og
+konkret, med fejlteksten hvis der er en). Lad aldrig som om det lykkedes. Er det en fejl i systemet (ikke
+bare manglende oplysninger fra brugeren), så slut med: "Skal jeg sende en fejlmelding til Nila-teamet?"
+Svarer brugeren ja - eller beder selv om at melde en fejl - så kald send_fejlmelding med en konkret
+beskrivelse: hvad brugeren bad om, hvad du gjorde, hvad der gik galt, og hvad der mangler. Bekræft
+derefter kort med det værktøjet svarede.
 
 "AFLYS ORDREN/SAGEN" betyder KUN én ting: skift status til Aflyst (saet_status). Skriv ALDRIG
 en bemærkning i samme ombæring, og GENTAG ALDRIG en tidligere handling (fx en bemærkning der
@@ -356,9 +370,15 @@ def run_agent(ctx: dict, user_message: str, raw_text: str = None, max_steps: int
             else:
                 udfoert.add(noegle)
                 result = tools.call_tool(tc.function.name, args, ctx)
+                from . import fejlrapport
+                fejlrapport.spor(ctx["telegram_id"], tc.function.name, args, result)
             messages.append({
                 "role": "tool", "tool_call_id": tc.id,
                 "content": json.dumps(result, ensure_ascii=False),
             })
 
-    return "Beklager, jeg kunne ikke fuldføre det. Prøv igen."
+    fejl = ("Beklager, jeg nåede ikke at gøre det færdigt, så det er IKKE sikkert at alt blev udført. "
+            "Skal jeg sende en fejlmelding til Nila-teamet, så de kan rette det? (svar ja)")
+    db.save_message(ctx["telegram_id"], "user", raw_text or user_message)
+    db.save_message(ctx["telegram_id"], "assistant", fejl)
+    return fejl

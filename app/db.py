@@ -294,7 +294,7 @@ def recent_messages(telegram_id, limit=10):
     at gamle bekraeftelser er GAMLE (og ikke gentager dem dage senere)."""
     with conn() as c:
         rows = c.execute(
-            "SELECT rolle, indhold, ts FROM samtaler WHERE telegram_id=? ORDER BY ts DESC LIMIT ?",
+            "SELECT rolle, indhold, ts FROM samtaler WHERE telegram_id=? ORDER BY ts DESC, rowid DESC LIMIT ?",
             (str(telegram_id), limit),
         ).fetchall()
         ud = []

@@ -427,11 +427,32 @@ def faktura_email(debtor):
 
 # ---------- Leveringsadresser (delivery addresses) ----------
 
+_LEV_CACHE = {"rows": None, "ts": 0.0}
+
+
+def alle_leveringsadresser(force=False, maks_sider=10):
+    """ALLE leveringsadresser (pagineret, cachet 5 min). Bruges til at finde sager ud fra vejnavn."""
+    now = time.time()
+    if not force and _LEV_CACHE["rows"] is not None and now - _LEV_CACHE["ts"] < 300:
+        return _LEV_CACHE["rows"]
+    rows, page = [], 1
+    while page <= maks_sider:
+        batch = _data(_req("GET", "/delivery-addresses", params={"pagesize": 100, "page": page})) or []
+        if not batch:
+            break
+        rows.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    _LEV_CACHE.update(rows=rows, ts=now)
+    return rows
+
+
 def delivery_addresses(customer_number):
     """Kundens gemte leveringsadresser. Tabellen 'cust_delivery_addresses' har ikke
-    en 'customer_number'-kolonne at filtrere på, så vi henter siden og filtrerer i Python."""
-    rows = _data(_req("GET", "/delivery-addresses", params={"pagesize": 100})) or []
-    return [d for d in rows if str(d.get("customer_number")) == str(customer_number)]
+    en 'customer_number'-kolonne at filtrere på, så vi henter ALLE sider og filtrerer i Python
+    (før: kun de første 100 -> dubletter når firmaet har mange adresser)."""
+    return [d for d in alle_leveringsadresser(force=True) if str(d.get("customer_number")) == str(customer_number)]
 
 
 def create_delivery_address(*, customer_number, adresse, postnr="", by="", navn="", att="", telefon="", email=""):
@@ -440,6 +461,7 @@ def create_delivery_address(*, customer_number, adresse, postnr="", by="", navn=
         "name": navn or "", "address": adresse, "postalcode": postnr, "city": by,
         "att": att, "telephone": telefon, "email": email,
     }
+    _LEV_CACHE["rows"] = None   # ny adresse -> næste opslag henter frisk liste
     return _data(_req("POST", "/delivery-addresses", json=body))
 
 

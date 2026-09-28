@@ -441,7 +441,7 @@ def planned_events(case_number):
     return res or []
 
 
-def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200):
+def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200, frisk=False):
     """Planlagte tider (Dagsoversigt) i et tidsrum paa tvaers af aabne sager.
     Returnerer [{sagsnummer, beskrivelse, kunde, startTime, stopTime, user_id}].
     Scanner de aabne sager en for en (API'et kan ikke filtrere plannedEvents paa dato)."""
@@ -451,7 +451,7 @@ def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200):
     # Indekset (bygget af scheduler hvert 10. min) daekker et bredt vindue - svar fra det
     # hvis det daekker det oenskede tidsrum og er friskt (< 20 min).
     c_n = _PLAN_CACHE.get("n")
-    if (c_n and c_n[0] <= start_ts and c_n[1] >= stop_ts
+    if (not frisk and c_n and c_n[0] <= start_ts and c_n[1] >= stop_ts
             and _t.time() - _PLAN_CACHE.get("ts", 0) < 1200):
         return [x for x in _PLAN_CACHE["rows"]
                 if start_ts <= x["startTime"] <= stop_ts
@@ -499,6 +499,8 @@ def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200):
 
 
 _PLAN_CACHE = {}
+import threading as _threading
+_PLAN_LAAS = _threading.Lock()
 
 
 def byg_plan_indeks():
@@ -506,8 +508,9 @@ def byg_plan_indeks():
     saa 'hvad har jeg i morgen' svarer paa et sekund i stedet for at scanne alle sager."""
     import time as _t
     nu = int(_t.time())
-    _PLAN_CACHE.clear()
-    planned_events_between(nu - 86400, nu + 14 * 86400)
+    # Ryd IKKE det gamle indeks først - så svarer 'hvad har jeg i morgen' fortsat under genopbygningen.
+    with _PLAN_LAAS:
+        planned_events_between(nu - 86400, nu + 14 * 86400, frisk=True)
 
 
 def plan_indeks_tilfoej(sagsnummer, beskrivelse, kunde, start_ts, stop_ts, user_ids):

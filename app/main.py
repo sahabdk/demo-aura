@@ -560,26 +560,75 @@ _seen_updates = []   # de seneste update_id'er vi har behandlet (mod Telegram-ge
 _afventende_foto = {}   # chat_id -> (file_id, tidspunkt): foto der venter på et sagsnummer
 
 
-def _foto_uden_nummer(chat_id, from_id, user, file_id, caption):
-    """Intet sagsnummer i billedteksten: proev at finde sagen ud fra adresse/kundenavn."""
-    sagsnr, forslag = None, []
+def _forslag_uden_tekst(from_id, maks=5):
+    """Ingen billedtekst: foreslå brugerens planlagte sager i dag, ellers de nyeste åbne sager."""
+    from . import sagssoeg, ordrestyring as _os, os_graphql as _gql
+    from .config import now_local
+    ud = []
     try:
-        from . import tools as _tools
-        sagsnr, forslag = _tools.find_sag_ud_fra_tekst(caption)
+        nu = now_local()
+        start = int(nu.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
+        mit_id = (db.get_user(str(from_id)) or {}).get("os_user_id")
+        for e in _gql.planned_events_between(start, start + 86400, user_id=mit_id):
+            if str(e["sagsnummer"]) not in {str(f["sagsnummer"]) for f in ud}:
+                ud.append({"sagsnummer": e["sagsnummer"], "kunde": e.get("kunde") or "",
+                           "adresse": "", "beskrivelse": (e.get("beskrivelse") or "").replace("\n", " ")[:60]})
+    except Exception:
+        pass
+    if not ud:
+        try:
+            for x in sagssoeg._aabne_sager_med_tekst()[:maks]:
+                ud.append({"sagsnummer": x["sag"].get("case_number"), "kunde": x["kunde"],
+                           "adresse": x["adresse"], "beskrivelse": x["opgave"]})
+        except Exception:
+            pass
+    return ud[:maks]
+
+
+def _spoerg_hvilken_sag(chat_id, hvad, forslag, soegt=""):
+    from . import sagssoeg
+    if forslag:
+        intro = (f"Jeg fandt {len(forslag)} åbne sager der passer på \"{soegt}\" — hvilken skal {hvad} gemmes på?"
+                 if soegt else f"Hvilken sag skal {hvad} gemmes på?")
+        telegram.send_message(chat_id, intro + "\n" + "\n".join(sagssoeg.linje(f, i) for i, f in enumerate(forslag, 1))
+                              + "\nSvar med 1, 2 … — eller skriv vejnavn eller kundens navn.")
+    else:
+        telegram.send_message(chat_id, (f"Jeg kunne ikke finde en åben sag der passer på \"{soegt}\". " if soegt else "")
+                              + f"Hvilken sag skal {hvad} gemmes på? Skriv vejnavnet eller kundens navn "
+                                "(husnummer er ikke nødvendigt).")
+
+
+def _foto_uden_nummer(chat_id, from_id, user, file_id, caption):
+    """Intet sagsnummer i billedteksten: find sagen ud fra vejnavn/kundenavn/by (også uden husnummer)."""
+    hvad = "billedet"
+    sagsnr, forslag = None, []
+    from . import sagssoeg
+    soegt = " ".join(sagssoeg.soegeord(caption))
+    try:
+        if soegt:
+            from . import tools as _tools
+            sagsnr, forslag = _tools.find_sag_ud_fra_tekst(caption, max_forslag=5)
+        else:
+            forslag = _forslag_uden_tekst(from_id)
     except Exception:
         log.exception("foto-adresseopslag-fejl")
     if sagsnr:
         _gem_foto_paa_sag(chat_id, from_id, user, file_id, str(sagsnr), caption)
         return
-    _afventende_foto[str(chat_id)] = (file_id, _time.time())
-    if forslag:
-        linjer = [f"- sag {f['sagsnummer']}: {f['kunde']}, {f['adresse']} — {f['beskrivelse']}".rstrip(" —")
-                  for f in forslag]
-        telegram.send_message(chat_id, "Hvilken sag skal billedet gemmes på?\n" + "\n".join(linjer)
-                                       + "\nSvar bare med sagsnummeret.")
-    else:
-        telegram.send_message(chat_id, "Hvilken sag skal billedet gemmes på? "
-                                       "Svar bare med sagsnummeret (fx 132).")
+    _afventende_foto[str(chat_id)] = (file_id, _time.time(), None, forslag, caption)
+    _spoerg_hvilken_sag(chat_id, hvad, forslag, soegt)
+
+
+def _sag_kort(sag):
+    """'Nila Selvtest · Solvej 7, 8000 Aarhus C' - så brugeren kan se at det er den rigtige sag."""
+    try:
+        from . import sagssoeg
+        for x in sagssoeg._aabne_sager_med_tekst():
+            if str(x["sag"].get("case_number")) == str(sag):
+                return " · ".join(v for v in (x["kunde"], x["adresse"]) if v)
+    except Exception:
+        pass
+    return ""
 
 
 def _gem_foto_paa_sag(chat_id, from_id, user, file_id, sag, caption=""):
@@ -604,7 +653,9 @@ def _gem_foto_paa_sag(chat_id, from_id, user, file_id, sag, caption=""):
                             f"sag {sag}: {navn}", ref_type="dokument", ref_id=(_up or {}).get("id"))
         except Exception:
             pass
-        telegram.send_message(chat_id, f"📎 Billedet er gemt under Dokumentation på sag {sag}.")
+        kort = _sag_kort(sag)
+        telegram.send_message(chat_id, f"📎 Billedet er gemt under Dokumentation på sag {sag}"
+                                       + (f" ({kort})." if kort else "."))
         try:   # gem i samtalehukommelsen, saa "sagen" bagefter betyder DENNE sag
             db.save_message(from_id, "user", f"(Sendte et foto{': ' + caption if caption else ''})")
             db.save_message(from_id, "assistant", f"Billedet er gemt under Dokumentation på sag {sag}.")
@@ -729,14 +780,11 @@ def _haandter_update(update):
             if m_sag:
                 _gem_foto_paa_sag(chat["id"], from_id, user, fil_id, m_sag.group(1), caption)
                 return {"ok": True}
-            if naevner_ordre:
+            if naevner_ordre or caption:
                 _foto_uden_nummer(chat["id"], from_id, user, fil_id, caption)
                 return {"ok": True}
-            telegram.send_message(chat["id"], "Jeg kunne ikke finde en stregkode på billedet. "
-                                              "Prøv tættere på, i bedre lys, og hold koden fladt. "
-                                              "Ville du gemme billedet på en sag, så skriv fx "
-                                              "'gem på sag 129' eller 'gem på ordren hos [kunde/adresse]' "
-                                              "som billedtekst.")
+            # intet tekst og ingen stregkode: spørg hvilken sag (med forslag)
+            _foto_uden_nummer(chat["id"], from_id, user, fil_id, "")
             return {"ok": True}
         text = f"(Brugeren har scannet en vare-stregkode: {kode}.) "
         if caption:
@@ -761,16 +809,58 @@ def _haandter_update(update):
     # Venter et foto på et sagsnummer? Så er "132" / "gem på sag 132" svaret på DET.
     afv_foto = _afventende_foto.get(str(chat["id"]))
     if afv_foto and _time.time() - afv_foto[1] < 600:
-        tl = text.strip().lower()
-        # Hun har LIGE spurgt "hvilken sag?" - ethvert kort svar med et tal er sagsnummeret
-        # (accepterer "132", "ja 132", "sag 132", "på sagen 132 tak" osv.)
-        mnum = re.search(r"(\d{1,6})", tl) if len(tl) < 40 else None
-        if mnum:
+        tl = text.strip().lower().lstrip("🎤 ")
+        medie_v = afv_foto[2] if len(afv_foto) > 2 else None
+        forslag_v = afv_foto[3] if len(afv_foto) > 3 else []
+        cap_v = afv_foto[4] if len(afv_foto) > 4 else ""
+        if tl in ("nej", "glem det", "annuller", "stop", "fortryd", "lad være", "lad vaere"):
             _afventende_foto.pop(str(chat["id"]), None)
-            _gem_foto_paa_sag(chat["id"], from_id, user, afv_foto[0], mnum.group(1))
+            telegram.send_message(chat["id"], "OK — billedet er ikke gemt.")
             return {"ok": True}
+        # Hun har LIGE spurgt "hvilken sag?": svar kan være sagsnummer, 1/2/3, 'den anden', vejnavn eller navn
+        if len(tl) < 60:
+            from . import sagssoeg
+            valgt = sagssoeg.vaelg_fra_svar(tl, forslag_v)
+            if not valgt:
+                mnum = re.search(r"(\d{2,6})", tl)
+                if mnum and not sagssoeg.soegeord(re.sub(r"\d+", "", tl)):
+                    valgt = mnum.group(1)   # et sagsnummer
+            if not valgt and sagssoeg.soegeord(tl):
+                nr, nye = sagssoeg.find(tl)
+                if nr:
+                    valgt = str(nr)
+                elif nye:
+                    hvad = "billedet"
+                    _afventende_foto[str(chat["id"])] = (afv_foto[0], _time.time(), medie_v, nye, cap_v)
+                    _spoerg_hvilken_sag(chat["id"], hvad, nye, " ".join(sagssoeg.soegeord(tl)))
+                    return {"ok": True}
+            if valgt:
+                _afventende_foto.pop(str(chat["id"]), None)
+                _gem_foto_paa_sag(chat["id"], from_id, user, afv_foto[0], str(valgt), cap_v)
+                return {"ok": True}
     elif afv_foto:
         _afventende_foto.pop(str(chat["id"]), None)   # udløbet
+
+    # "meld en fejl: ..." / "fejlmelding: ..." -> ALTID fejlmelding til Nila-teamet (ikke besked til lederen)
+    mfejl = re.match(r"^\s*(?:🎤\s*)?(?:meld(?:e)?\s+(?:en\s+)?fejl|fejlmelding|fejlrapport)\b[\s:,.\-]*(.*)$",
+                     text or "", re.I | re.S)
+    if mfejl:
+        from . import fejlrapport
+        besk = mfejl.group(1).strip()
+        if len(besk) < 5:
+            telegram.send_message(chat["id"], "Beskriv kort hvad der gik galt, fx: 'meld en fejl: sagen blev "
+                                              "planlagt på den forkerte dag'.")
+            return {"ok": True}
+        r = fejlrapport.send({"telegram_id": from_id, "navn": user["navn"], "rolle": user["rolle"]},
+                             f"(Meldt af brugeren) {besk}")
+        svar = ("✅ Fejlmeldingen er sendt til Nila-teamet med alle detaljer." if r["status"] == "sendt" else
+                "✅ Fejlmeldingen er gemt i fejlloggen, hvor Nila-teamet kan se den"
+                + (" - og de har fået besked." if os.environ.get("FEJL_TELEGRAM_ID") else
+                   " (mailen kunne ikke sendes, fordi mail ikke er sat op endnu)."))
+        db.save_message(from_id, "user", text)
+        db.save_message(from_id, "assistant", svar)
+        telegram.send_message(chat["id"], svar)
+        return {"ok": True}
 
     # Menu-kommandoer (kun leder) — virker både skrevet og talt (fx "menu", "nye ordrer")
     if user["rolle"] == "pro" and menu.try_command(chat["id"], from_id, text):

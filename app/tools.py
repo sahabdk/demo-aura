@@ -201,7 +201,16 @@ _FOTO_STOPORD = {"tilføj", "tilfoej", "gem", "gemme", "billede", "billedet", "b
 
 def find_sag_ud_fra_tekst(tekst, max_forslag=4):
     """Find aabne sager ud fra fritekst (kundenavn/adresse), fx 'ordren paa torvet 6'.
-    Returnerer (sagsnummer|None, forslag): sagsnummer kun ved ENTYDIGT match."""
+    Returnerer (sagsnummer|None, forslag): sagsnummer kun ved ENTYDIGT match.
+    Først den brede søgning (vejnavn UDEN husnummer, navn, by, opgave - på tværs af sagens beskrivelse,
+    leveringsadresse og kundekort, se app/sagssoeg.py), ellers den gamle kunde-baserede."""
+    try:
+        from . import sagssoeg
+        nr, forslag = sagssoeg.find(tekst, max_forslag=max(max_forslag, 5))
+        if nr or forslag:
+            return nr, forslag[:max(max_forslag, 5)]
+    except Exception as e:
+        print(f"[sagssoeg] fejl: {str(e)[:150]}", flush=True)
     ord_ = [o for o in str(tekst or "").replace(",", " ").split()
             if o.lower().strip(".!?") not in _FOTO_STOPORD]
     soeg = " ".join(ord_).strip()
@@ -339,6 +348,16 @@ def _med_adresse(beskrivelse, adresse):
     if not a:
         return b
     if _norm(a) in _norm(b):
+        return b
+    # Står vejnavn + husnummer allerede i beskrivelsen, så skriv IKKE adressen en gang til - erstat i stedet
+    # en første linje, der KUN er adressen, med den fulde.
+    import re as _re
+    gade = _re.split(r",|\b\d{4}\b", a)[0].strip()
+    if gade and _norm(gade) in _norm(b):
+        linjer = b.split("\n")
+        if _norm(linjer[0].rstrip(",. ")) == _norm(gade):
+            linjer[0] = a + ","
+            return "\n".join(linjer)
         return b
     # Lederen kan selv bestemme placeringen via Nila ("adressen skal stå sidst") -> meta ordre_adresse
     plac = (db.get_meta("ordre_adresse") or "foerst").strip().lower()
@@ -742,8 +761,7 @@ def se_aftaler(args, ctx):
         e = int(_dt.strptime(til, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=tz).timestamp())
         mit_id = (db.get_user(ctx["telegram_id"]) or {}).get("os_user_id")
         if not os_gql._PLAN_CACHE.get("n"):
-            raise RuntimeError("kalender-indekset bygges lige nu (lige efter genstart) - "
-                               "sig til brugeren at planlagte sager kan ses om et minut")
+            os_gql.byg_plan_indeks()   # lige efter genstart: byg indekset nu i stedet for at give op
         evts = os_gql.planned_events_between(s, e, user_id=mit_id)
         ud["planlagte_sager"] = [
             {"sagsnummer": x["sagsnummer"], "kunde": x["kunde"], "opgave": x["beskrivelse"],
@@ -1164,6 +1182,12 @@ def _find_medarbejdere(args, ctx, kraev=False):
 def planlaeg_sag(args, ctx):
     """Planlaeg en sag: Planlagt tid med dato, tidsrum og medarbejder (kun leder)."""
     sag = args["sagsnummer"]
+    try:
+        if not os_api.get_case(sag):
+            return {"fejl": f"sag {sag} findes ikke i ordrestyring", "intet_skete": True}
+    except Exception as e:
+        if "404" in str(e) or "not found" in str(e).lower():
+            return {"fejl": f"sag {sag} findes ikke i ordrestyring", "intet_skete": True}
     dato = (args.get("dato") or "").strip() or now_local().strftime("%Y-%m-%d")
 
     def _norm_tid(s):
@@ -1303,12 +1327,17 @@ def ring_op(args, ctx):
     ringes kunden op med firmaets hovednummer som afsender. Samtalen noteres bagefter."""
     from . import telefonnotat as tn
     from . import retell as _retell
-    if not tn.TWILIO_SID:
-        return {"fejl": "telefon er ikke sat op (TWILIO_SID mangler)"}
-    mig = next((m for m in tn.mobiler() if str(m.get("telegram_id")) == str(ctx["telegram_id"])), None)
-    if not mig:
-        return {"resultat": "Din mobil staar ikke paa telefon-listen (Pilly -> Telefonnotat -> Mobiler) "
-                            "med dit telegram-id, saa jeg kan ikke ringe dig op. Sig det til lederen."}
+    # 'link' = Nila giver nummeret, brugeren trykker og ringer fra sin EGEN telefon (intet Twilio).
+    # 'twilio' = Nila ringer brugeren op via Twilio og stiller om. Standard: twilio hvis det er sat op.
+    import os as _os
+    maade = (_os.environ.get("RING_OP_MAADE") or
+             ("link" if (_os.environ.get("RELATEL_TOKEN") or not tn.TWILIO_SID) else "twilio")).strip().lower()
+    mig = None
+    if maade == "twilio":
+        mig = next((m for m in tn.mobiler() if str(m.get("telegram_id")) == str(ctx["telegram_id"])), None)
+        if not mig:
+            return {"resultat": "Din mobil staar ikke paa telefon-listen (Pilly -> Telefonnotat -> Mobiler) "
+                                "med dit telegram-id, saa jeg kan ikke ringe dig op. Sig det til lederen."}
     tlf = (args.get("telefon") or "").strip()
     navn = (args.get("navn") or "").strip()
     kn = str(args.get("customer_number") or "").strip()
@@ -1356,6 +1385,11 @@ def ring_op(args, ctx):
     til = tn._e164(tlf)
     if len(til) < 11:
         return {"fejl": f"ugyldigt telefonnummer: {tlf}"}
+    if maade != "twilio":
+        db.log_handling("", ctx.get("navn") or "", ctx.get("telegram_id"), "ring-op (link)", f"{navn or ''} {til}")
+        return {"resultat": f"Tryk på nummeret for at ringe {navn or 'kunden'} op fra din egen telefon:\n{til}",
+                "instruks": "Svar KORT med præcis den tekst - nummeret skal stå alene på sin egen linje i "
+                            "formatet +45xxxxxxxx (så kan det trykkes på i Telegram). Sig ALDRIG 'jeg ringer nu'."}
     try:
         tn.ring_op(mig, til, navn, kn)
     except Exception as e:
@@ -1613,6 +1647,22 @@ def fortryd_handling(args, ctx):
 
 # ---------- registry: skema + funktion + tilladte roller ----------
 
+
+# ---------- fejlmelding til Nila-teamet ----------
+
+def send_fejlmelding(args, ctx):
+    from . import fejlrapport
+    besk = (args.get("beskrivelse") or "").strip()
+    if len(besk) < 10:
+        return {"fejl": "beskriv kort hvad brugeren bad om, hvad der skete, og hvad der gik galt"}
+    r = fejlrapport.send(ctx, besk)
+    if r["status"] == "sendt":
+        return {"resultat": f"Fejlmeldingen er sendt til Nila-teamet ({r['til']}) med alle detaljer."}
+    return {"resultat": "Fejlmeldingen er GEMT i fejlloggen med alle detaljer, men mailen kunne ikke sendes "
+                        "(mail er ikke sat op). Sig PRÆCIS dette i én sætning og tilbyd INTET andet (ingen "
+                        "'prøv igen senere' eller 'send til lederen'): 'Fejlmeldingen er gemt i fejlloggen, "
+                        "hvor Nila-teamet kan se den - mailen kunne ikke sendes, fordi mail ikke er sat op endnu.'"}
+
 TOOLS = [
     {
         "func": vis_raa_timer, "roles": {"pro"},
@@ -1707,7 +1757,7 @@ TOOLS = [
         "func": besked_til_leder, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "besked_til_leder",
-            "description": "Send en kort besked til lederen (Dan) i Telegram. Brug den naar brugeren "
+            "description": "(IKKE til fejlmeldinger - brug send_fejlmelding.) Send en kort besked til lederen (Dan) i Telegram. Brug den naar brugeren "
                            "vil have noget videre til lederen: 'bed lederen tildele mig sag X', "
                            "oensker, spoergsmaal, meldinger. Kald vaerktoejet STRAKS naar brugeren "
                            "har sagt ja EN gang - spoerg aldrig om bekraeftelse flere gange.",
@@ -1797,11 +1847,13 @@ TOOLS = [
         "func": find_sag, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "find_sag",
-            "description": "Find en sag ud fra ADRESSE eller KUNDENAVN (fritekst, taaler stave- og "
-                           "hoerefejl). Brug den ALTID naar brugeren omtaler en sag uden nummer, fx "
-                           "'ordren paa Torvet 6', 'sagen hos Mads Jensen'. Ved entydigt_match: brug "
-                           "sagsnummeret direkte. Ved forslag: list dem kort (sagsnummer + kunde + "
-                           "beskrivelse) og spoerg hvilken.",
+            "description": "Find en ÅBEN sag ud fra det brugeren husker: VEJNAVN (også uden husnummer), "
+                           "KUNDENAVN (fornavn eller efternavn er nok), by eller opgaven (fritekst, taaler stave- "
+                           "og hoerefejl). Brug den ALTID naar brugeren omtaler en sag uden nummer, fx "
+                           "'sagen paa Solvej', 'ordren hos Hansen', 'tavlen i Kolding'. Spoerg ALDRIG brugeren "
+                           "om et sagsnummer - mennesker husker vejnavne og navne. Ved entydigt_match: brug "
+                           "sagsnummeret direkte. Ved forslag: list dem nummereret (1) 2) ...) med kunde + "
+                           "adresse + opgave, og spoerg hvilken ('svar 1, 2 eller navnet').",
             "parameters": {"type": "object", "properties": {
                 "soegetekst": {"type": "string"}}, "required": ["soegetekst"]},
         }},
@@ -2094,6 +2146,20 @@ TOOLS = [
                 "seneste": {"type": "boolean", "description": "true = nummeret fra det seneste opkald"},
                 "navn": {"type": "string", "description": "hvem nummeret tilhører (valgfrit)"}},
                 "required": ["handling"]},
+        }},
+    },
+    {
+        "func": send_fejlmelding, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "send_fejlmelding",
+            "description": "Send en DETALJERET fejlmelding til Nila-teamet (kontakt@nila.dk), så de kan rette "
+                           "fejlen. Brug når brugeren siger ja til din fejlmelding, eller selv beder om at "
+                           "melde en fejl. Samtalen og dine seneste værktøjskald kommer automatisk med.",
+            "parameters": {"type": "object", "properties": {
+                "beskrivelse": {"type": "string",
+                                "description": "Konkret: hvad brugeren bad om, hvad du gjorde/forsøgte, hvad "
+                                               "der gik galt (fejltekst), og hvad der IKKE blev udført."}},
+                "required": ["beskrivelse"]},
         }},
     },
     {
