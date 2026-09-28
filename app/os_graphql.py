@@ -421,7 +421,7 @@ def case_overview(case_number):
 
 def planned_events(case_number):
     """Planlagte tider for en sag (Dagsoversigt/kalender): [{id, startTime, stopTime, text}]."""
-    cid = _case_internal_id(case_number)
+    cid = _cid_cached(case_number)
     if not cid:
         return []
     q = (f"{{ plannedEvents(caseId: {int(cid)}) "
@@ -441,22 +441,31 @@ def planned_events(case_number):
     return res or []
 
 
-def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200, frisk=False):
-    """Planlagte tider (Dagsoversigt) i et tidsrum paa tvaers af aabne sager.
-    Returnerer [{sagsnummer, beskrivelse, kunde, startTime, stopTime, user_id}].
-    Scanner de aabne sager en for en (API'et kan ikke filtrere plannedEvents paa dato)."""
+_PLAN_CACHE = {}
+_CID_CACHE = {}          # sagsnummer -> internt GraphQL-id (aendrer sig aldrig for en sag)
+import threading as _threading
+_PLAN_LAAS = _threading.RLock()   # RLock: byg_plan_indeks -> planned_events_between tager den igen
+_BYGGER = {"i_gang": False}
+_BYG_FLAG_LAAS = _threading.Lock()
+
+
+def _cid_cached(case_number):
+    """Internt id for et sagsnummer - slaas kun op een gang (sparer et kald pr. sag ved hver scanning)."""
+    k = str(case_number)
+    cid = _CID_CACHE.get(k)
+    if cid is None:
+        cid = _case_internal_id(case_number)
+        if cid:
+            _CID_CACHE[k] = cid
+    return cid
+
+
+def _scan_planlagt(start_ts, stop_ts, maks_sager=200):
+    """Scanner de aabne sager for planlagte tider i tidsrummet - 8 sager ad gangen parallelt.
+    (Foer: en ad gangen = op til 400 kald i traek = 2-3 min. Set 28/9: 3 min svartid paa en
+    forsinkelses-sms lige efter en genstart, fordi indekset ikke var bygget endnu.)"""
     from . import ordrestyring as os_api
-    import time as _t
-    start_ts, stop_ts = int(start_ts), int(stop_ts)
-    # Indekset (bygget af scheduler hvert 10. min) daekker et bredt vindue - svar fra det
-    # hvis det daekker det oenskede tidsrum og er friskt (< 20 min).
-    c_n = _PLAN_CACHE.get("n")
-    if (not frisk and c_n and c_n[0] <= start_ts and c_n[1] >= stop_ts
-            and _t.time() - _PLAN_CACHE.get("ts", 0) < 1200):
-        return [x for x in _PLAN_CACHE["rows"]
-                if start_ts <= x["startTime"] <= stop_ts
-                and (user_id is None or str(x.get("user_id")) == str(user_id))]
-    ud = []
+    from concurrent.futures import ThreadPoolExecutor
     kunder = {}
     try:
         kunder = {str(d.get("customer_number")): d.get("customer_name")
@@ -466,51 +475,101 @@ def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200, fris
     # Statusser der IKKE er arbejde: lukket/afsluttet, aflyst, annulleret, faktureret
     doede = set()
     try:
-        for s in os_api.case_statuses():
-            t = (s.get("text") or "").lower()
+        for st_ in os_api.case_statuses():
+            t = (st_.get("text") or "").lower()
             if any(o in t for o in ("lukket", "afslut", "aflyst", "annull", "faktur", "closed", "cancel")):
-                doede.add(str(s.get("id")))
+                doede.add(str(st_.get("id")))
     except Exception:
         pass
-    n = 0
+    sager = []
     for c in os_api.cases_paged():
         if os_api.is_closed(c) or str(c.get("status")) in doede:
             continue
-        n += 1
-        if n > maks_sager:
+        sager.append(c)
+        if len(sager) >= maks_sager:
             break
-        nr = c.get("case_number")
+
+    def _hent(c):
         try:
-            evts = planned_events(nr)
+            return c, planned_events(c.get("case_number"))
         except Exception:
-            continue
-        for e in evts:
-            st, sp = int(e.get("startTime") or 0), int(e.get("stopTime") or 0)
-            if not st or st > stop_ts or (sp or st) < start_ts:
-                continue
-            uid = (e.get("user") or {}).get("id")
-            ud.append({"sagsnummer": nr,
-                       "beskrivelse": (c.get("description") or "").strip()[:80],
-                       "kunde": kunder.get(str(c.get("customer_number"))) or c.get("customer_number"),
-                       "startTime": st, "stopTime": sp, "user_id": uid})
+            return c, []
+
+    ud = []
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for c, evts in ex.map(_hent, sager):
+            nr = c.get("case_number")
+            for e in evts:
+                st, sp = int(e.get("startTime") or 0), int(e.get("stopTime") or 0)
+                if not st or st > stop_ts or (sp or st) < start_ts:
+                    continue
+                uid = (e.get("user") or {}).get("id")
+                ud.append({"sagsnummer": nr,
+                           "beskrivelse": (c.get("description") or "").strip()[:80],
+                           "kunde": kunder.get(str(c.get("customer_number"))) or c.get("customer_number"),
+                           "startTime": st, "stopTime": sp, "user_id": uid})
     ud.sort(key=lambda x: x["startTime"])
-    _PLAN_CACHE.update({"n": (start_ts, stop_ts), "ts": _t.time(), "rows": ud})
+    return ud
+
+
+def planned_events_between(start_ts, stop_ts, user_id=None, maks_sager=200, frisk=False):
+    """Planlagte tider (Dagsoversigt) i et tidsrum paa tvaers af aabne sager.
+    Returnerer [{sagsnummer, beskrivelse, kunde, startTime, stopTime, user_id}].
+    Svarer fra indekset (bygget af scheduleren hvert 10. min: -7 dage -> +60 dage) naar det daekker
+    tidsrummet; ellers scannes sagerne (parallelt). API'et kan ikke filtrere plannedEvents paa dato."""
+    import time as _t
+    start_ts, stop_ts = int(start_ts), int(stop_ts)
+
+    def _daekker():
+        c_n = _PLAN_CACHE.get("n")
+        return bool(c_n and _PLAN_CACHE.get("rows") is not None
+                    and c_n[0] <= start_ts and c_n[1] >= stop_ts)
+
+    def _filtrer(rows):
+        return [x for x in rows if start_ts <= x["startTime"] <= stop_ts
+                and (user_id is None or str(x.get("user_id")) == str(user_id))]
+
+    if not frisk and _daekker():
+        if _t.time() - _PLAN_CACHE.get("ts", 0) >= 1200:
+            _byg_i_baggrunden()   # gammelt indeks (scheduleren haltede): svar fra det NU, byg nyt bagved
+        return _filtrer(_PLAN_CACHE["rows"])
+    with _PLAN_LAAS:   # bygger scheduleren lige nu, saa vent paa den i stedet for at scanne dobbelt
+        if not frisk and _daekker():
+            return _filtrer(_PLAN_CACHE["rows"])
+        ud = _scan_planlagt(start_ts, stop_ts, maks_sager)
+        c_n = _PLAN_CACHE.get("n")
+        # Gem KUN som indeks naar vinduet daekker mindst det gamle. Et smalt ad hoc-opslag maa ikke
+        # overskrive det brede indeks - saa rammer alle opslag bagefter forbi og scanner igen (op til 10 min).
+        if frisk or not c_n or (start_ts <= c_n[0] and stop_ts >= c_n[1]):
+            _PLAN_CACHE.update({"n": (start_ts, stop_ts), "ts": _t.time(), "rows": ud})
     return [x for x in ud if user_id is None or str(x.get("user_id")) == str(user_id)]
 
 
-_PLAN_CACHE = {}
-import threading as _threading
-_PLAN_LAAS = _threading.Lock()
-
-
 def byg_plan_indeks():
-    """Kaldes af scheduleren: bygger indekset over planlagt tid fra i gaar til +14 dage,
-    saa 'hvad har jeg i morgen' svarer paa et sekund i stedet for at scanne alle sager."""
+    """Kaldes af scheduleren (og straks ved opstart): indeks over planlagt tid fra -7 til +60 dage,
+    saa 'hvad har jeg i morgen' svarer paa et sekund i stedet for at scanne alle sager. Vinduet koster
+    ikke ekstra (alle sagens tider hentes alligevel). Det gamle indeks ryddes IKKE foerst - det nye
+    erstatter det til sidst, saa opslag under genopbygningen stadig faar svar."""
     import time as _t
     nu = int(_t.time())
-    # Ryd IKKE det gamle indeks først - så svarer 'hvad har jeg i morgen' fortsat under genopbygningen.
-    with _PLAN_LAAS:
-        planned_events_between(nu - 86400, nu + 14 * 86400, frisk=True)
+    planned_events_between(nu - 7 * 86400, nu + 60 * 86400, frisk=True)
+
+
+def _byg_i_baggrunden():
+    """Genopbyg indekset i en baggrundstraad - hoejst en ad gangen."""
+    with _BYG_FLAG_LAAS:
+        if _BYGGER["i_gang"]:
+            return
+        _BYGGER["i_gang"] = True
+
+    def _k():
+        try:
+            byg_plan_indeks()
+        except Exception as e:
+            print(f"[plan_indeks] baggrundsbygning fejlede: {str(e)[:120]}", flush=True)
+        finally:
+            _BYGGER["i_gang"] = False
+    _threading.Thread(target=_k, daemon=True).start()
 
 
 def plan_indeks_tilfoej(sagsnummer, beskrivelse, kunde, start_ts, stop_ts, user_ids):

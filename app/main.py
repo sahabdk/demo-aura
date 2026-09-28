@@ -702,6 +702,8 @@ async def telegram_webhook(secret: str, request: Request):
 
 
 def _haandter_update(update):
+    _t_modtaget = _time.time()
+    _tider = []   # (trin, sekunder) - se _svartid_log
     # Knap-tryk (callback_query) — kun for leder
     cq = update.get("callback_query")
     if cq:
@@ -794,7 +796,9 @@ def _haandter_update(update):
                      "hvilken sag og hvor mange styk den skal paa.")
     elif msg.get("voice"):
         try:
+            _t_stt = _time.time()
             text = telegram.transcribe_voice(msg["voice"]["file_id"])
+            _tider.append(("tale→tekst", _time.time() - _t_stt))
         except Exception as e:
             log.exception("whisper-fejl")
             telegram.send_message(chat["id"], "Jeg kunne ikke forstå talebeskeden — prøv igen.")
@@ -909,6 +913,7 @@ def _haandter_update(update):
 
     threading.Thread(target=_puls, daemon=True).start()
     _t0 = _time.time()
+    ctx["_tid"] = _tider
     try:
         svar = run_agent(ctx, text, raa_tekst, talt=var_tale)
     except Exception as e:
@@ -926,14 +931,38 @@ def _haandter_update(update):
     # Talte du til hende -> svar med tale; ellers tekst (sparer data ved skrift)
     if var_tale:
         try:
-            telegram.send_voice(chat["id"], telegram.synthesize_voice(svar), reply_to=citer)
+            _t_tts = _time.time()
+            lyd = telegram.synthesize_voice(svar)
+            _tider.append(("tekst→tale", _time.time() - _t_tts))
+            telegram.send_voice(chat["id"], lyd, reply_to=citer)
         except Exception as e:
             log.exception("tts-fejl")
             telegram.send_message(chat["id"], svar, reply_to=citer)
             _notify_leader(f"TTS-fejl: {e}")
     else:
         telegram.send_message(chat["id"], svar, reply_to=citer)
+    _svartid_log(from_id, user, _tider, _t_modtaget, msg.get("date"))
     return {"ok": True}
+
+
+def _svartid_log(from_id, user, tider, t_modtaget, sendt_ts=None):
+    """Skriv hvor tiden gik: altid i loggen, og som Pilly-handling '⏱ langsomt svar' naar et svar tog
+    over 15 s - saa en langsom assistent kan diagnosticeres uden gaetteri (set 28/9: 3 min for en
+    forsinkelses-sms). sendt_ts = Telegrams eget tidsstempel paa beskeden -> viser om forsinkelsen laa
+    FOER vi overhovedet fik beskeden (genstart/udrulning)."""
+    try:
+        total = _time.time() - t_modtaget
+        levering = max(0.0, t_modtaget - float(sendt_ts)) if sendt_ts else 0.0
+        dele = " · ".join(f"{navn} {sek:.1f} s" for navn, sek in (tider or []))
+        linje = f"i alt {total:.0f} s"
+        if levering >= 10:
+            linje += f" (+{levering:.0f} s inden Telegram leverede beskeden til os)"
+        linje += f": {dele}" if dele else ""
+        print(f"[svartid] {user.get('navn')}: {linje}", flush=True)
+        if total >= 15 or levering >= 15:
+            db.log_handling(from_id, user.get("navn"), user.get("rolle"), "⏱ langsomt svar", linje[:350])
+    except Exception:
+        pass
 
 
 def _notify_leader(text: str):

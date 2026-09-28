@@ -9,7 +9,7 @@ from .config import (TELEGRAM_TOKEN, OPENAI_API_KEY, OPENAI_TTS_MODEL, OPENAI_TT
 
 API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 FILE_API = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}"
-_client = OpenAI(api_key=OPENAI_API_KEY)
+_client = OpenAI(api_key=OPENAI_API_KEY, timeout=60, max_retries=1)   # tale ind/ud maa ikke haenge i minutter
 
 
 def send_message(chat_id, text: str, reply_to=None, parse_mode=None):

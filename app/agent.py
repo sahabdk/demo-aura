@@ -1,11 +1,13 @@
 """Aura-agenten: OpenAI function-calling i stedet for Make AI Agent."""
 import json
+import time as _time
 from datetime import datetime
 from openai import OpenAI
 from .config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_REASONING, now_local
 from . import tools, db
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+# timeout/max_retries: SDK'ets standard er 10 min og 2 forsoeg - et haengende kald maa ikke laase et svar i minutter
+client = OpenAI(api_key=OPENAI_API_KEY, timeout=120, max_retries=1)
 
 SYSTEM_PROMPT = """Du er Aura, en venlig og professionel dansk assistent for el-firmaet Vandt & Vandt.
 Tal naturligt, flydende og varmt — som et rigtigt menneske, i hele sætninger. Vær hjælpsom og imødekommende,
@@ -351,8 +353,11 @@ def run_agent(ctx: dict, user_message: str, raw_text: str = None, max_steps: int
         kwargs["service_tier"] = tier
 
     udfoert = set()   # (vaerktoej, argumenter) der allerede er koert i DETTE svar
+    tider = ctx.get("_tid") if isinstance(ctx.get("_tid"), list) else []   # hvor gaar tiden? (main._svartid_log)
     for _ in range(max_steps):
+        _t = _time.time()
         resp = client.chat.completions.create(messages=messages, **kwargs)
+        tider.append(("model", _time.time() - _t))
         msg = resp.choices[0].message
         messages.append(msg.model_dump(exclude_none=True))
 
@@ -374,7 +379,9 @@ def run_agent(ctx: dict, user_message: str, raw_text: str = None, max_steps: int
                                       "giv brugeren dit endelige svar nu."}
             else:
                 udfoert.add(noegle)
+                _t = _time.time()
                 result = tools.call_tool(tc.function.name, args, ctx)
+                tider.append((tc.function.name, _time.time() - _t))
                 from . import fejlrapport
                 fejlrapport.spor(ctx["telegram_id"], tc.function.name, args, result)
             messages.append({
