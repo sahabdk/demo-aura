@@ -111,9 +111,10 @@ def _stt_prompt() -> str:
     dele = ["Dansk talebesked til firmaets assistent om VVS-/el-sager. "
             "Ordet 'sag' efterfølges ofte af et tal. "
             "Fagord: registrer timer, pause, overtid, udkald, færdigmeld, rykker, stregkode, "
-            "planlæg, tildel, materialer, vare, dokumentation, reference, montør, bemærkning. "
+            "planlæg, tildel, materialer, vare, dokumentation, reference, montør, bemærkning, notat, note. "
             "Typiske vendinger: opret ny ordre for, han bor på, hun bor på, kunden bor på, "
-            "adressen er, der skal sættes, der skal trækkes ledning, nede i kælderen."]
+            "adressen er, der skal sættes, der skal trækkes ledning, nede i kælderen, notat på sag, "
+            "notat til sagen på, skriv en note på ordren hos."]
     navne = []
     try:
         from . import db

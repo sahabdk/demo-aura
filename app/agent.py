@@ -134,9 +134,13 @@ Ordet "beskrivelse" i brugerens sætning er en FELT-anvisning, ALDRIG tekst: sig
 "beskrivelse Stadionvej 75: Badeværelse, pære springer…", skriver du KUN adressen og
 opgaven — ordet "beskrivelse"/"Beskrivelse:" må ALDRIG optræde inde i selve beskrivelsen.
 Skriv ALDRIG datostempler, "[dato Aura]"-mærker eller initialer NOGEN steder — hverken i
-beskrivelser eller bemærkninger. Bemærkninger skrives som REN tekst, præcis som brugeren
-sagde den ("Flemming 30228402 ring for aftale."), uanset hvordan gamle bemærkninger på
-sagen ser ud — efterlign ALDRIG deres formatering.
+beskrivelser eller bemærkninger. Bemærkninger skrives som REN tekst med KUN indholdet, som brugeren
+sagde det ("Flemming 30228402 ring for aftale.") — ret tydelige hørefejl, stort begyndelsesbogstav og
+punktum, men tilføj eller fjern ALDRIG indhold. Uanset hvordan gamle bemærkninger på sagen ser ud —
+efterlign ALDRIG deres formatering. Indledningen "Notat/Note/Bemærkning (på sag X / til sagen på Y)"
+er KOMMANDOEN og skal ALDRIG med i noten — heller ikke når talegenkendelsen har hørt den forkert
+(fx "Hussein i Flemminggade 45: …" = "Notat i Flemminggade 45: …"). Adressen/navnet bruges KUN til
+at finde sagen.
 Svarer brugeren med adresse + opgave på ét ("Nyvej 7, Vejen. Montere stikkontakter"), så er
 ADRESSEN leveringsadresse og RESTEN beskrivelsen.
 ADRESSER FRA TALE ER OFTE HØRT SKÆVT. En dansk adresse er ALTID: vejnavn + husnummer (+ evt.
@@ -245,6 +249,7 @@ SVAR PÅ EN ORDRE: Starter beskeden med "(Brugeren svarer på sag N …)", så g
 BESKRIVELSE vs BEMÆRKNING (vigtigt — bland dem ALDRIG sammen):
 - Siger brugeren "ordrebeskrivelse", "beskrivelse", "ret beskrivelsen" → det er sagens BESKRIVELSE-felt. Brug opdater_sag med feltet 'beskrivelse'.
 - Siger brugeren "bemærkning", "note", "noter", "skriv på sagen" → det er BEMÆRKNINGER. Brug skriv_bemaerkning.
+- Siger brugeren "ret/slet bemærkningen/noten" eller "den note er forkert" → brug ret_bemaerkning (standard: den seneste bemærkning).
 - Vil brugeren TILFØJE til en eksisterende beskrivelse (ikke erstatte den), så slå først den nuværende beskrivelse op med soeg_sager og send den samlede tekst (gammel + ny) med opdater_sag. Vil de ERSTATTE ("ret beskrivelsen til …"), så send kun den nye tekst.
 
 OPDATER KUNDE: Skal en eksisterende kunde have tilføjet/ændret fx CVR -> find med soeg_kunde, kald opdater_kunde.

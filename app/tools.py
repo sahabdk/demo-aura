@@ -256,6 +256,78 @@ def _ejer_eller_afvis(sagsnummer, ctx):
                         "tildelt dig. Bed lederen, hvis en anden sag skal ændres."}
 
 
+_GADE = re.compile(r"[a-zæøåéü]+(?:vej|gade|allé|alle|vænge|vænget|parken|park|stien|sti|torv|torvet|plads|"
+                   r"bakke|bakken|have|haven|toft|toften|mark|marken|grenen|holm|lund|høj|dal|strand|stræde|"
+                   r"engen|eng|skov|skoven|bro|broen|hus|huse|gården|gård|vang|vangen|agre|ager|kær|kæret)\s+\d+",
+                   re.I)
+_NOTEORD = re.compile(r"\b(notat|note|noten|noter|bemærkning|bemaerkning|kommentar)\b", re.I)
+_SAGSORD = re.compile(r"\b(sag|sagen|ordre|ordren)\b", re.I)
+# et udsagnsord i indledningen = den er en rigtig saetning ("Ordren mangler: …"), ikke en henvisning til sagen
+_SAETNING = re.compile(r"\b(er|var|blev|bliver|skal|skulle|kan|kunne|vil|ville|har|havde|mangler|manglede|"
+                       r"afventer|kommer|kom|står|stod|virker|virkede|går|gik|ønsker|mener|siger|sagde)\b", re.I)
+
+
+def _rens_bemaerkning(tekst, sagsnummer=None):
+    """En bemærkning er KUN selve noten. Fjern det der var kommandoen/henvisningen til sagen, fx
+    'Notat på sag 165: …', 'Note til ordren på Solvej: …' - og talegenkendelsens hørefejl af den, fx
+    'Hussein i Flemminggade 45: …' (set 28/9: 'Notat' blev hørt som 'Hussein'). Stort begyndelsesbogstav."""
+    t = re.sub(r"^\s*\[[^\]]{0,40}\]\s*", "", str(tekst or "")).strip()
+    m = re.match(r"^\s*([^:\n]{1,80}?)\s*(?::|\s[-–])\s+(\S.*)$", t, re.S)
+    if m:
+        pre = m.group(1)
+        if _NOTEORD.search(pre):
+            fjern = True
+        elif _SAETNING.search(pre):
+            fjern = False      # "Ordren mangler: 3 stikkontakter" - indledningen ER indhold, bevar den
+        else:
+            fjern = bool(_SAGSORD.search(pre) or _GADE.search(pre))
+        if not fjern and sagsnummer and not _SAETNING.search(pre):
+            try:   # sagens egen adresse eller kundens navn i indledningen -> det er henvisningen til sagen
+                from . import sagssoeg
+                for x in sagssoeg._aabne_sager_med_tekst():
+                    if str(x["sag"].get("case_number")) == str(sagsnummer):
+                        kendte = sagssoeg.soegeord(f"{x['adresse']} {x['kunde']}")
+                        fjern = any(o in sagssoeg.soegeord(pre) for o in kendte if not o.isdigit())
+                        break
+            except Exception:
+                pass
+        if fjern:
+            t = m.group(2).strip()
+    return (t[0].upper() + t[1:]) if t else t
+
+
+def ret_bemaerkning(args, ctx):
+    """Ret eller slet en bemærkning på en sag - standard den SENESTE (fx efter en hørefejl i en talebesked)."""
+    sag = args["sagsnummer"]
+    afvist = _ejer_eller_afvis(sag, ctx)
+    if afvist:
+        return afvist
+    c = os_api.get_case(sag) or {}
+    dele = [d.strip() for d in (c.get("remarks") or "").replace("\n", " | ").split("|") if d.strip()]
+    if not dele:
+        return {"resultat": f"Sag {sag} har ingen bemærkninger.", "intet_skete": True}
+    find = (args.get("find") or "").strip().lower()
+    idx = len(dele) - 1
+    if find:
+        hits = [i for i, d in enumerate(dele) if find in d.lower()]
+        if not hits:
+            return {"resultat": f"Ingen bemærkning på sag {sag} indeholder '{args['find']}'.",
+                    "bemaerkninger": dele, "intet_skete": True}
+        idx = hits[-1]
+    gammel = dele[idx]
+    if args.get("slet"):
+        dele.pop(idx)
+        hvad = f"Bemærkningen '{gammel}' er slettet fra sag {sag}."
+    else:
+        ny = _rens_bemaerkning(args.get("ny_tekst") or "", sag)
+        if not ny:
+            return {"fejl": "hvad skal bemærkningen rettes til?"}
+        dele[idx] = ny
+        hvad = f"Bemærkningen på sag {sag} er rettet til: '{ny}' (før: '{gammel}')."
+    os_api.saet_bemaerkninger(sag, " | ".join(dele))
+    return {"resultat": hvad}
+
+
 def skriv_bemaerkning(args, ctx):
     afvist = _ejer_eller_afvis(args["sagsnummer"], ctx)
     if afvist:
@@ -263,7 +335,7 @@ def skriv_bemaerkning(args, ctx):
     dato = datetime.now().strftime("%d-%m-%Y")
     # HAARDT VAERN: bemaerkninger skal vaere RENE - klip ethvert "[dato Aura]"-agtigt
     # praefiks af, ogsaa hvis modellen selv har sat det paa (efterligning af gamle noter)
-    tekst = re.sub(r"^\s*\[[^\]]{0,40}\]\s*", "", str(args["bemaerkning"] or "")).strip()
+    tekst = _rens_bemaerkning(args["bemaerkning"], args["sagsnummer"])
     res = os_api.add_remark(args["sagsnummer"], tekst, dato)
     if isinstance(res, dict) and res.get("duplikat"):
         return {"resultat": f"Bemærkningen står ALLEREDE på sag {args['sagsnummer']} - "
@@ -2163,6 +2235,20 @@ TOOLS = [
         }},
     },
     {
+        "func": ret_bemaerkning, "roles": {"pro", "jun"},
+        "schema": {"type": "function", "function": {
+            "name": "ret_bemaerkning",
+            "description": "Ret eller slet en bemærkning på en sag ('ret bemærkningen på sagen på Flemminggade til …', "
+                           "'slet den sidste note på sag 165'). Standard er den SENESTE bemærkning; brug 'find' "
+                           "(et ord fra den) hvis det er en anden. ny_tekst = KUN den rettede note.",
+            "parameters": {"type": "object", "properties": {
+                "sagsnummer": {"type": "string"}, "ny_tekst": {"type": "string"},
+                "find": {"type": "string", "description": "et ord fra den bemærkning der skal rettes (valgfri)"},
+                "slet": {"type": "boolean"}},
+                "required": ["sagsnummer"]},
+        }},
+    },
+    {
         "func": husk_aftale, "roles": {"pro", "jun"},
         "schema": {"type": "function", "function": {
             "name": "husk_aftale",
@@ -2203,6 +2289,7 @@ def schemas_for_role(rolle: str):
 
 # Ændrende værktøjer der skal i handlingsloggen (læse-værktøjer logges ikke)
 MUTERENDE = {
+    "ret_bemaerkning": "bemærkning rettet",
     "privat_nummer": "privat-liste ændret",
     "ordre_regel": "ordreregel ændret",
     "meld_forsinkelse": "forsinkelses-sms sendt",

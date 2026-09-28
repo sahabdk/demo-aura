@@ -194,6 +194,11 @@ def saet_rekvirent(case_number, navn):
     return {"felt": "requestor", "navn": navn}
 
 
+def saet_bemaerkninger(case_number, tekst):
+    """Overskriv sagens bemærkninger (bruges når en bemærkning rettes eller slettes)."""
+    return _data(_req("PUT", f"/cases/{case_number}", json={"remarks": tekst or ""}))
+
+
 def add_remark(case_number, tekst, dato_str):
     """Tilføjer en bemærkning og bevarer historikken.
     DUBLET-VÆRN: (næsten) samme tekst skrives aldrig to gange - talegenkendelsen
